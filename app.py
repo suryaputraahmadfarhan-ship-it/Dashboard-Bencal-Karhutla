@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Dashboard Bencana Alam - Dir 2.3 (BIN Deputi 2) - Wilayah Sumatera & Kalimantan."""
+"""Disaster Monitoring Dashboard - Directorate 2.3 (BIN Deputy 2) - Sumatra & Kalimantan."""
 import io
 from datetime import date
 
@@ -11,7 +11,7 @@ import streamlit as st
 from data_generator import generate_all, PROVINSI, TIPE_BENCANA
 
 st.set_page_config(
-    page_title="Dashboard Bencana Alam - Dir 2.3 BIN",
+    page_title="Disaster Monitoring Dashboard - Dir 2.3 BIN",
     page_icon="🛰️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -50,7 +50,7 @@ h1, h2, h3 { color: #1e3a8a; }
 </style>
 """, unsafe_allow_html=True)
 
-TIPE_COLOR = {"Karhutla": "#dc2626", "Banjir": "#2563eb", "Bencana Alam Lainnya": "#0891b2"}
+TIPE_COLOR = {"Karhutla": "#dc2626", "Banjir": "#2563eb", "Gempa": "#7c3aed", "Bencana Alam Lainnya": "#0891b2"}
 SEVERITY_COLOR = {"Ringan": "#93c5fd", "Sedang": "#3b82f6", "Berat": "#1d4ed8", "Sangat Berat": "#1e3a8a"}
 
 # ---------------------------------------------------------------- helpers
@@ -66,14 +66,14 @@ def load_uploaded(f):
             return pd.read_excel(f)
         return pd.read_csv(f)
     except Exception as e:
-        st.error(f"Gagal membaca file: {e}")
+        st.error(f"Failed to read file: {e}")
         return None
 
 
 def normalize_df(df):
     df = df.copy()
     # tanggal
-    for c in ["tanggal", "date", "tgl"]:
+    for c in ["tanggal", "date", "tgl", "date_time"]:
         if c in df.columns:
             df["tanggal"] = pd.to_datetime(df[c], errors="coerce")
             break
@@ -91,14 +91,14 @@ def normalize_df(df):
                 df = df.rename(columns={c: "kabupaten"})
     # tipe bencana
     if "tipe_bencana" not in df.columns:
-        for c in ["tipe", "jenis", "jenis_bencana", "type"]:
+        for c in ["tipe", "jenis", "jenis_bencana", "type", "disaster_type"]:
             if c in df.columns:
                 df = df.rename(columns={c: "tipe_bencana"})
     if "tipe_bencana" not in df.columns:
         df["tipe_bencana"] = "Bencana Alam Lainnya"
     # luas
     if "luas_ha" not in df.columns:
-        for c in ["luas", "area_ha", "luasan", "luas_terdampak", "luas_terdampak_ha"]:
+        for c in ["luas", "area_ha", "luasan", "luas_terdampak", "luas_terdampak_ha", "affected_area"]:
             if c in df.columns:
                 df = df.rename(columns={c: "luas_ha"})
     if "luas_ha" in df.columns:
@@ -114,25 +114,24 @@ def normalize_df(df):
                 df = df.rename(columns={c: "lon"})
     # korban
     if "korban_jiwa" not in df.columns:
-        for c in ["korban_meninggal", "meninggal", "dead", "korban"]:
+        for c in ["korban_meninggal", "meninggal", "dead", "fatalities", "korban"]:
             if c in df.columns:
                 df = df.rename(columns={c: "korban_jiwa"})
     if "korban_jiwa" not in df.columns:
         df["korban_jiwa"] = 0
     if "korban_luka" not in df.columns:
-        for c in ["luka", "injured"]:
+        for c in ["luka", "injured", "injuries"]:
             if c in df.columns:
                 df = df.rename(columns={c: "korban_luka"})
     if "korban_luka" not in df.columns:
         df["korban_luka"] = 0
     # ispa
     if "ispa_cases" not in df.columns:
-        for c in ["ispa", "dampak_ispa", "kasus_ispa"]:
+        for c in ["ispa", "dampak_ispa", "kasus_ispa", "ispa"]:
             if c in df.columns:
                 df = df.rename(columns={c: "ispa_cases"})
     if "ispa_cases" not in df.columns:
         df["ispa_cases"] = 0
-    # numeric
     for c in ["korban_jiwa", "korban_luka", "ispa_cases"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
@@ -148,7 +147,7 @@ def normalize_df(df):
         df["severity"] = "Sedang"
     # id
     if "id_kejadian" not in df.columns:
-        for c in ["id", "id_laporan"]:
+        for c in ["id", "id_laporan", "incident_id"]:
             if c in df.columns:
                 df = df.rename(columns={c: "id_kejadian"})
     if "id_kejadian" not in df.columns:
@@ -171,11 +170,11 @@ st.markdown("""
   <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Lambang_Badan_Intelijen_Negara.svg/120px-Lambang_Badan_Intelijen_Negara.svg.png" width="70"/>
   <div>
     <div style="font-size:13px; color:#1e3a8a; font-weight:600; letter-spacing:0.5px;">
-      BADAN INTELIJEN NEGARA &middot; DEPUTI 2 &middot; DIREKTORAT 2.3
+      BADAN INTELIJEN NEGARA &middot; DEPUTY 2 &middot; DIRECTORATE 2.3
     </div>
-    <h1 style="margin:0; color:#1e3a8a;">Dashboard Monitoring Bencana Alam</h1>
+    <h1 style="margin:0; color:#1e3a8a;">Disaster Monitoring Dashboard</h1>
     <div style="color:#334155; font-size:14px;">
-      Wilayah Kerja: Sumatera &amp; Kalimantan &nbsp;|&nbsp; Monitoring Kejadian, Luas Terdampak, Korban, dan Dampak (ISPA)
+      Working Area: Sumatra &amp; Kalimantan &nbsp;|&nbsp; Monitoring Incidents, Affected Area, Casualties, and Impact (ISPA)
     </div>
   </div>
 </div>
@@ -184,43 +183,43 @@ st.markdown("""
 # ---------------------------------------------------------------- sidebar
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Lambang_Badan_Intelijen_Negara.svg/120px-Lambang_Badan_Intelijen_Negara.svg.png", width=70)
-    st.title("🛰️ Dashboard Bencana")
-    st.caption("Dir 2.3 - Deputi 2 BIN")
+    st.title("🛰️ Disaster Dashboard")
+    st.caption("Directorate 2.3 - Deputy 2 BIN")
     st.divider()
 
-    data_source = st.radio("Sumber data", ["Data Sintetis (Demo)", "Upload CSV/Excel (Pusat)"], index=0)
+    data_source = st.radio("Data Source", ["Synthetic Data (Demo)", "Upload CSV/Excel (Central)"], index=0)
 
     seed = 42
-    if data_source == "Data Sintetis (Demo)":
-        seed = st.slider("Seed data", 1, 999, 42)
+    if data_source == "Synthetic Data (Demo)":
+        seed = st.slider("Data Seed", 1, 999, 42)
 
     st.divider()
-    st.subheader("Filter")
+    st.subheader("Filters")
     tipe_sel = None
     prov_sel = None
 
 # ---------------------------------------------------------------- load data
-if data_source == "Data Sintetis (Demo)":
+if data_source == "Synthetic Data (Demo)":
     inc_raw, hs_raw = get_default_data(seed)
     pusat_df = inc_raw.copy()
     hotspot_df = hs_raw.copy()
 else:
-    st.sidebar.subheader("Upload data Pusat")
-    pusat_file = st.sidebar.file_uploader("File Pusat (Bencana)", type=["csv", "xlsx", "xls"], key="pusat")
+    st.sidebar.subheader("Upload Central Data")
+    pusat_file = st.sidebar.file_uploader("Central Data File (Disasters)", type=["csv", "xlsx", "xls"], key="pusat")
     pusat_df = None
     hotspot_df = None
     if pusat_file is not None:
         tmp = load_uploaded(pusat_file)
         if tmp is not None:
             pusat_df = normalize_df(tmp)
-            hotspot_file = st.sidebar.file_uploader("File Hotspot (opsional)", type=["csv", "xlsx", "xls"], key="hs")
+            hotspot_file = st.sidebar.file_uploader("Hotspot File (optional)", type=["csv", "xlsx", "xls"], key="hs")
             if hotspot_file is not None:
                 htmp = load_uploaded(hotspot_file)
                 if htmp is not None:
                     hotspot_df = normalize_df(htmp)
 
 if pusat_df is None:
-    st.info("Silakan upload file data Pusat, atau pilih mode Data Sintetis (Demo).")
+    st.info("Please upload a central data file, or choose Synthetic Data (Demo).")
     st.stop()
 
 pusat_df["tanggal"] = pd.to_datetime(pusat_df["tanggal"], errors="coerce")
@@ -230,13 +229,13 @@ if hotspot_df is not None:
 # sidebar filters
 with st.sidebar:
     all_tipe = [t for t in TIPE_BENCANA if t in pusat_df["tipe_bencana"].unique()] or sorted(pusat_df["tipe_bencana"].dropna().unique().tolist())
-    tipe_sel = st.multiselect("Tipe Bencana", all_tipe, default=all_tipe)
+    tipe_sel = st.multiselect("Disaster Type", all_tipe, default=all_tipe)
     all_provs = sorted(pusat_df["provinsi"].dropna().unique().tolist())
-    prov_sel = st.multiselect("Provinsi", all_provs, default=[])
+    prov_sel = st.multiselect("Province", all_provs, default=[])
     valid_dates = pusat_df["tanggal"].dropna()
     dmin = valid_dates.min().date() if len(valid_dates) else date(2025, 1, 1)
     dmax = valid_dates.max().date() if len(valid_dates) else date(2025, 12, 31)
-    dr = st.date_input("Rentang tanggal", value=(dmin, dmax), min_value=dmin, max_value=dmax)
+    dr = st.date_input("Date Range", value=(dmin, dmax), min_value=dmin, max_value=dmax)
     if not isinstance(dr, (tuple, list)):
         dr = (dr, dr)
 
@@ -261,33 +260,39 @@ else:
     hotspot_f = None
 
 # ---------------------------------------------------------------- KPIs
-st.subheader("Indikator Utama")
+st.subheader("Key Indicators")
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 with c1:
-    st.metric("Total Kejadian", fmt_num(len(pusat_f)))
+    st.metric("Total Incidents", fmt_num(len(pusat_f)))
 with c2:
-    st.metric("Total Luas Terdampak (ha)", fmt_num(pusat_f["luas_ha"].sum() if "luas_ha" in pusat_f else 0, 1))
+    st.metric("Total Affected Area (ha)", fmt_num(pusat_f["luas_ha"].sum() if "luas_ha" in pusat_f else 0, 1))
 with c3:
     korban = (pusat_f["korban_jiwa"].sum() if "korban_jiwa" in pusat_f else 0) + (pusat_f["korban_luka"].sum() if "korban_luka" in pusat_f else 0)
-    st.metric("Total Korban", fmt_num(korban))
+    st.metric("Total Casualties", fmt_num(korban))
 with c4:
-    st.metric("Kasus ISPA", fmt_num(pusat_f["ispa_cases"].sum() if "ispa_cases" in pusat_f else 0))
+    st.metric("ISPA Cases", fmt_num(pusat_f["ispa_cases"].sum() if "ispa_cases" in pusat_f else 0))
 with c5:
-    st.metric("Provinsi Terdampak", pusat_f["provinsi"].nunique() if "provinsi" in pusat_f else 0)
+    st.metric("Affected Provinces", pusat_f["provinsi"].nunique() if "provinsi" in pusat_f else 0)
 with c6:
     hs_today = 0
     if hotspot_f is not None and not hotspot_f.empty:
         last_d = hotspot_f["tanggal"].max()
         hs_today = (hotspot_f["tanggal"].dt.date == last_d.date()).sum()
-    st.metric("Hotspot (hari terakhir data)", fmt_num(hs_today))
+    st.metric("Hotspots (latest data day)", fmt_num(hs_today))
 
-tabs = st.tabs(["🗺️ Peta", "📊 Analisis", "🔥 Hotspot", "📈 Tren", "📋 Data", "⬇️ Export"])
+tabs = st.tabs(["🗺️ Map", "📊 Analytics", "🔥 Hotspots", "📈 Trends", "📋 Data", "⬇️ Export"])
 
-# ---------------- Tab Peta
+def _display_date(df):
+    d = df.copy()
+    if "tanggal" in d.columns:
+        d["tanggal"] = pd.to_datetime(d["tanggal"], errors="coerce").dt.strftime("%Y-%m-%d")
+    return d
+
+# ---------------- Tab Map
 with tabs[0]:
-    st.subheader("Peta Kejadian Bencana")
+    st.subheader("Disaster Map")
     if pusat_f.empty:
-        st.warning("Tidak ada data.")
+        st.warning("No data available.")
     else:
         fig = px.scatter_geo(
             pusat_f, lat="lat", lon="lon",
@@ -298,91 +303,89 @@ with tabs[0]:
             color_discrete_map=TIPE_COLOR, size_max=34,
             projection="natural earth",
         )
-        fig.update_geos(center=dict(lat=0.5, lon=110), projection_scale=5.2,
+        fig.update_geos(center=dict(lat=0.5, lon=110), projection_scale=5.6,
+                        lataxis_range=[-12, 12], lonaxis_range=[92, 125],
                         showland=True, landcolor="#eaf2ff",
                         showocean=True, oceancolor="#f0f7ff",
                         showcountries=True, countrycolor="#94a3b8")
         fig.update_layout(height=580, margin=dict(l=0, r=0, t=20, b=0),
-                          legend_title="Tipe Bencana")
+                          legend_title="Disaster Type")
         st.plotly_chart(fig, use_container_width=True)
 
     colA, colB = st.columns([1, 1])
     with colA:
         if "provinsi" in pusat_f:
-            g = pusat_f.groupby("provinsi").size().reset_index(name="kejadian").sort_values("kejadian", ascending=False).head(15)
-            fig = px.bar(g, x="kejadian", y="provinsi", orientation="h",
-                         title="Kejadian per Provinsi", color="kejadian",
+            g = pusat_f.groupby("provinsi").size().reset_index(name="incidents").sort_values("incidents", ascending=False).head(15)
+            fig = px.bar(g, x="incidents", y="provinsi", orientation="h",
+                         title="Incidents by Province", color="incidents",
                          color_continuous_scale="Blues")
             fig.update_layout(height=420, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
     with colB:
         if "tipe_bencana" in pusat_f:
-            g = pusat_f.groupby("tipe_bencana").size().reset_index(name="kejadian")
-            fig = px.pie(g, values="kejadian", names="tipe_bencana", title="Komposisi Tipe Bencana",
+            g = pusat_f.groupby("tipe_bencana").size().reset_index(name="incidents")
+            fig = px.pie(g, values="incidents", names="tipe_bencana", title="Disaster Type Composition",
                          color="tipe_bencana", color_discrete_map=TIPE_COLOR, hole=0.45)
             fig.update_layout(height=420)
             st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- Tab Analisis
+# ---------------- Tab Analytics
 with tabs[1]:
-    st.subheader("Analisis: Kejadian, Luas Terdampak, Korban, Dampak (ISPA)")
+    st.subheader("Analytics: Incidents, Affected Area, Casualties, Impact (ISPA)")
     r1, r2 = st.columns(2)
     with r1:
         if "tipe_bencana" in pusat_f:
-            g = pusat_f.groupby("tipe_bencana").agg(kejadian=("id_kejadian", "count"),
-                                                   luas=("luas_ha", "sum")).reset_index()
-            fig = px.bar(g, x="tipe_bencana", y=["kejadian", "luas"], barmode="group",
-                         title="Jumlah Kejadian & Luas Terdampak per Tipe")
+            g = pusat_f.groupby("tipe_bencana").agg(incidents=("id_kejadian", "count"),
+                                                   affected_area=("luas_ha", "sum")).reset_index()
+            fig = px.bar(g, x="tipe_bencana", y=["incidents", "affected_area"], barmode="group",
+                         title="Incidents & Affected Area by Type")
             fig.update_layout(height=380)
             st.plotly_chart(fig, use_container_width=True)
     with r2:
         if "severity" in pusat_f:
-            g = pusat_f.groupby("severity").size().reset_index(name="kejadian")
-            fig = px.bar(g, x="severity", y="kejadian", title="Distribusi Severity",
+            g = pusat_f.groupby("severity").size().reset_index(name="incidents")
+            fig = px.bar(g, x="severity", y="incidents", title="Severity Distribution",
                          color="severity", color_discrete_map=SEVERITY_COLOR)
             fig.update_layout(height=380, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
     r3, r4 = st.columns(2)
     with r3:
-        # Korban per tipe
         if "tipe_bencana" in pusat_f:
-            g = pusat_f.groupby("tipe_bencana").agg(korban_jiwa=("korban_jiwa", "sum"),
-                                                   korban_luka=("korban_luka", "sum")).reset_index()
-            fig = px.bar(g, x="tipe_bencana", y=["korban_jiwa", "korban_luka"], barmode="group",
-                         title="Korban (Jiwa & Luka) per Tipe Bencana",
+            g = pusat_f.groupby("tipe_bencana").agg(fatalities=("korban_jiwa", "sum"),
+                                                   injuries=("korban_luka", "sum")).reset_index()
+            fig = px.bar(g, x="tipe_bencana", y=["fatalities", "injuries"], barmode="group",
+                         title="Casualties (Dead & Injured) by Disaster Type",
                          color_discrete_sequence=["#dc2626", "#f97316"])
             fig.update_layout(height=380)
             st.plotly_chart(fig, use_container_width=True)
     with r4:
-        # ISPA per tipe (terutama karhutla)
         if "tipe_bencana" in pusat_f:
             g = pusat_f.groupby("tipe_bencana")["ispa_cases"].sum().reset_index()
-            fig = px.bar(g, x="tipe_bencana", y="ispa_cases", title="Kasus ISPA per Tipe Bencana",
+            fig = px.bar(g, x="tipe_bencana", y="ispa_cases", title="ISPA Cases by Disaster Type",
                          color="tipe_bencana", color_discrete_map=TIPE_COLOR)
             fig.update_layout(height=380, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("#### Rekap per Provinsi")
+    st.markdown("#### Province Summary")
     if "provinsi" in pusat_f:
         g = pusat_f.groupby("provinsi").agg(
-            kejadian=("id_kejadian", "count"),
-            luas_ha=("luas_ha", "sum"),
-            korban_jiwa=("korban_jiwa", "sum"),
-            korban_luka=("korban_luka", "sum"),
+            incidents=("id_kejadian", "count"),
+            affected_area_ha=("luas_ha", "sum"),
+            fatalities=("korban_jiwa", "sum"),
+            injuries=("korban_luka", "sum"),
             ispa_cases=("ispa_cases", "sum"),
-        ).reset_index().sort_values("kejadian", ascending=False)
+        ).reset_index().sort_values("incidents", ascending=False)
         st.dataframe(g, use_container_width=True, hide_index=True)
 
-# ---------------- Tab Hotspot
+# ---------------- Tab Hotspots
 with tabs[2]:
-    st.subheader("🔥 Sebaran Hotspot")
+    st.subheader("Hotspot Distribution")
     if hotspot_f is None or hotspot_f.empty:
-        st.warning("Data hotspot tidak tersedia. (Upload file hotspot di sidebar atau gunakan mode Sintetis.)")
+        st.warning("Hotspot data is not available. (Upload a hotspot file in the sidebar or use Synthetic mode.)")
     else:
-        # pilih tanggal
         dates = sorted(hotspot_f["tanggal"].dt.date.unique().tolist(), reverse=True)
-        pick = st.selectbox("Tanggal Hotspot", dates, index=0)
+        pick = st.selectbox("Hotspot Date", dates, index=0)
         hdf = hotspot_f[hotspot_f["tanggal"].dt.date == pick]
         h1, h2 = st.columns([3, 1])
         with h1:
@@ -393,87 +396,87 @@ with tabs[2]:
                 projection="natural earth",
                 color_discrete_map={"Low": "#93c5fd", "Nominal": "#2563eb", "High": "#1e3a8a"},
             )
-            fig.update_geos(center=dict(lat=0.5, lon=110), projection_scale=5.2,
+            fig.update_geos(center=dict(lat=0.5, lon=110), projection_scale=5.6,
+                            lataxis_range=[-12, 12], lonaxis_range=[92, 125],
                             showland=True, landcolor="#eaf2ff", showocean=True, oceancolor="#f0f7ff",
                             showcountries=True, countrycolor="#94a3b8")
             fig.update_layout(height=520, margin=dict(l=0, r=0, t=20, b=0),
-                              title=f"Hotspot {pick} (n={len(hdf)})")
+                              title=f"Hotspots on {pick} (n={len(hdf)})")
             st.plotly_chart(fig, use_container_width=True)
         with h2:
-            st.metric("Hotspot tgl ini", fmt_num(len(hdf)))
+            st.metric("Hotspots (this day)", fmt_num(len(hdf)))
             if "provinsi" in hdf:
-                g = hdf.groupby("provinsi").size().reset_index(name="hotspot").sort_values("hotspot", ascending=False)
+                g = hdf.groupby("provinsi").size().reset_index(name="hotspots").sort_values("hotspots", ascending=False)
                 st.dataframe(g, use_container_width=True, hide_index=True)
             if "confidence" in hdf:
                 cg = hdf["confidence"].value_counts().reset_index()
-                cg.columns = ["confidence", "jumlah"]
-                fig2 = px.pie(cg, values="jumlah", names="confidence", title="Confidence Hotspot",
+                cg.columns = ["confidence", "count"]
+                fig2 = px.pie(cg, values="count", names="confidence", title="Hotspot Confidence",
                               color_discrete_sequence=["#93c5fd", "#2563eb", "#1e3a8a"], hole=0.4)
                 fig2.update_layout(height=260)
                 st.plotly_chart(fig2, use_container_width=True)
 
-        # tren hotspot harian
-        st.markdown("#### Tren Hotspot Harian")
+        st.markdown("#### Daily Hotspot Trend")
         if hotspot_f is not None:
             ts = hotspot_f.copy()
-            ts["tgl"] = ts["tanggal"].dt.date
-            g = ts.groupby("tgl").size().reset_index(name="hotspot")
-            fig = px.area(g, x="tgl", y="hotspot", title="Jumlah Hotspot per Hari",
+            ts["day"] = ts["tanggal"].dt.date
+            g = ts.groupby("day").size().reset_index(name="hotspots")
+            fig = px.area(g, x="day", y="hotspots", title="Hotspots per Day",
                           color_discrete_sequence=["#2563eb"])
             fig.update_layout(height=340)
             st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- Tab Tren
+# ---------------- Tab Trends
 with tabs[3]:
-    st.subheader("Tren Waktu")
+    st.subheader("Time Trends")
     if "tanggal" in pusat_f and pusat_f["tanggal"].notna().any():
         ts = pusat_f.copy()
-        ts["bulan"] = ts["tanggal"].dt.to_period("M").astype(str)
-        g = ts.groupby("bulan").agg(kejadian=("id_kejadian", "count"),
-                                    luas=("luas_ha", "sum"),
-                                    korban=("korban_jiwa", "sum"),
-                                    ispa=("ispa_cases", "sum")).reset_index().sort_values("bulan")
-        fig = px.line(g, x="bulan", y=["kejadian", "luas", "korban", "ispa"], title="Tren Bulanan",
+        ts["month"] = ts["tanggal"].dt.to_period("M").astype(str)
+        g = ts.groupby("month").agg(incidents=("id_kejadian", "count"),
+                                    affected_area=("luas_ha", "sum"),
+                                    casualties=("korban_jiwa", "sum"),
+                                    ispa=("ispa_cases", "sum")).reset_index().sort_values("month")
+        fig = px.line(g, x="month", y=["incidents", "affected_area", "casualties", "ispa"], title="Monthly Trend",
                       markers=True)
         fig.update_layout(height=440, xaxis_tickangle=-45)
         st.plotly_chart(fig, use_container_width=True)
 
         ts2 = pusat_f.copy()
-        ts2["minggu"] = ts2["tanggal"].dt.to_period("W").astype(str)
-        g2 = ts2.groupby("minggu").size().reset_index(name="kejadian").sort_values("minggu")
-        fig2 = px.area(g2, x="minggu", y="kejadian", title="Tren Kejadian Mingguan", color_discrete_sequence=["#1e3a8a"])
+        ts2["week"] = ts2["tanggal"].dt.to_period("W").astype(str)
+        g2 = ts2.groupby("week").size().reset_index(name="incidents").sort_values("week")
+        fig2 = px.area(g2, x="week", y="incidents", title="Weekly Incident Trend", color_discrete_sequence=["#1e3a8a"])
         fig2.update_layout(height=340, xaxis_tickangle=-60)
         st.plotly_chart(fig2, use_container_width=True)
     else:
-        st.warning("Kolom tanggal tidak tersedia.")
+        st.warning("Date column is not available.")
 
 # ---------------- Tab Data
 with tabs[4]:
-    st.subheader("Data & Kualitas Data")
-    st.markdown("**Data Pusat (filter)**")
-    st.dataframe(pusat_f, use_container_width=True, height=280)
+    st.subheader("Data & Data Quality")
+    st.markdown("**Central Data (filtered)**")
+    st.dataframe(_display_date(pusat_f), use_container_width=True, height=280)
     if hotspot_f is not None:
-        st.markdown("**Data Hotspot (filter)**")
-        st.dataframe(hotspot_f, use_container_width=True, height=220)
+        st.markdown("**Hotspot Data (filtered)**")
+        st.dataframe(_display_date(hotspot_f), use_container_width=True, height=220)
 
-    st.markdown("#### Profil Kualitas Data")
+    st.markdown("#### Data Quality Profile")
     q_rows = []
-    for name, df_ in [("Pusat", pusat_f), ("Hotspot", hotspot_f if hotspot_f is not None else pd.DataFrame())]:
+    for name, df_ in [("Central", pusat_f), ("Hotspot", hotspot_f if hotspot_f is not None else pd.DataFrame())]:
         if df_.empty:
             continue
         q_rows.append({
-            "Sumber": name,
-            "Jumlah Record": len(df_),
-            "Kolom": len(df_.columns),
+            "Source": name,
+            "Records": len(df_),
+            "Columns": len(df_.columns),
             "Missing Values": int(df_.isna().sum().sum()),
-            "% Missing": round(df_.isna().sum().sum() / max(df_.size, 1) * 100, 2),
-            "Tanpa Koordinat": int(df_[["lat", "lon"]].isna().any(axis=1).sum()) if all(c in df_ for c in ["lat", "lon"]) else 0,
+            "Missing %": round(df_.isna().sum().sum() / max(df_.size, 1) * 100, 2),
+            "Without Coordinates": int(df_[["lat", "lon"]].isna().any(axis=1).sum()) if all(c in df_ for c in ["lat", "lon"]) else 0,
         })
     st.dataframe(pd.DataFrame(q_rows), use_container_width=True, hide_index=True)
 
 # ---------------- Tab Export
 with tabs[5]:
-    st.subheader("Export Laporan")
+    st.subheader("Export Reports")
     template_cols = ["id_kejadian", "tanggal", "provinsi", "kabupaten", "lat", "lon",
                      "tipe_bencana", "luas_ha", "korban_jiwa", "korban_luka", "pengungsi",
                      "ispa_cases", "penyebab", "severity", "status_verifikasi", "sumber"]
@@ -483,37 +486,53 @@ with tabs[5]:
     htmpl = pd.DataFrame(columns=hotspot_cols)
     c1, c2 = st.columns(2)
     with c1:
-        st.download_button("⬇️ Template Bencana (CSV)", tmpl.to_csv(index=False).encode("utf-8"),
-                           file_name="template_bencana.csv", mime="text/csv")
+        st.download_button("⬇️ Disaster Template (CSV)", tmpl.to_csv(index=False).encode("utf-8"),
+                           file_name="disaster_template.csv", mime="text/csv")
     with c2:
-        st.download_button("⬇️ Template Hotspot (CSV)", htmpl.to_csv(index=False).encode("utf-8"),
-                           file_name="template_hotspot.csv", mime="text/csv")
+        st.download_button("⬇️ Hotspot Template (CSV)", htmpl.to_csv(index=False).encode("utf-8"),
+                           file_name="hotspot_template.csv", mime="text/csv")
 
-    # export data saat ini
+    st.markdown("#### Export by Disaster Type")
+    if "tipe_bencana" in pusat_f:
+        tipe_list = [t for t in ["Karhutla", "Banjir", "Gempa", "Bencana Alam Lainnya"]]
+        available = [t for t in tipe_list if t in pusat_f["tipe_bencana"].unique().tolist()]
+        if available:
+            tipe_choice = st.selectbox("Select type for CSV", available)
+            sub = pusat_f[pusat_f["tipe_bencana"] == tipe_choice]
+            st.download_button(f"⬇️ Download CSV: {tipe_choice}", sub.to_csv(index=False).encode("utf-8"),
+                               file_name=f"data_{tipe_choice.lower().replace(' ', '_')}.csv", mime="text/csv")
+            st.caption(f"Records for {tipe_choice}: {len(sub)}")
+
     csv_bytes = pusat_f.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Download Data Bencana (CSV)", csv_bytes,
-                       file_name="data_bencana.csv", mime="text/csv")
+    st.download_button("⬇️ Download Combined (CSV - current filters)", csv_bytes,
+                       file_name="disaster_data_combined.csv", mime="text/csv")
+
+    st.markdown("#### Download Excel (separated by type + combined)")
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        pusat_f.to_excel(w, index=False, sheet_name="Bencana")
+        pusat_f.to_excel(w, index=False, sheet_name="Combined")
+        if "tipe_bencana" in pusat_f:
+            for t in pusat_f["tipe_bencana"].unique():
+                nm = t.replace(" ", "")[:28]
+                pusat_f[pusat_f["tipe_bencana"] == t].to_excel(w, index=False, sheet_name=nm)
         if hotspot_f is not None:
             hotspot_f.to_excel(w, index=False, sheet_name="Hotspot")
         if "provinsi" in pusat_f:
             summ = pusat_f.groupby("provinsi").agg(
-                kejadian=("id_kejadian", "count"), luas_ha=("luas_ha", "sum"),
-                korban_jiwa=("korban_jiwa", "sum"), korban_luka=("korban_luka", "sum"),
+                incidents=("id_kejadian", "count"), affected_area_ha=("luas_ha", "sum"),
+                fatalities=("korban_jiwa", "sum"), injuries=("korban_luka", "sum"),
                 ispa_cases=("ispa_cases", "sum")).reset_index()
-            summ.to_excel(w, index=False, sheet_name="Rekap Provinsi")
+            summ.to_excel(w, index=False, sheet_name="Province Summary")
         if "tipe_bencana" in pusat_f:
             summ2 = pusat_f.groupby("tipe_bencana").agg(
-                kejadian=("id_kejadian", "count"), luas_ha=("luas_ha", "sum"),
-                korban_jiwa=("korban_jiwa", "sum"), korban_luka=("korban_luka", "sum"),
+                incidents=("id_kejadian", "count"), affected_area_ha=("luas_ha", "sum"),
+                fatalities=("korban_jiwa", "sum"), injuries=("korban_luka", "sum"),
                 ispa_cases=("ispa_cases", "sum")).reset_index()
-            summ2.to_excel(w, index=False, sheet_name="Rekap Tipe")
-    st.download_button("⬇️ Download Laporan Lengkap (Excel)", buf.getvalue(),
-                       file_name="laporan_bencana.xlsx",
+            summ2.to_excel(w, index=False, sheet_name="Type Summary")
+    st.download_button("⬇️ Download Full Report (Excel)", buf.getvalue(),
+                       file_name="disaster_report.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    st.success("File siap diunduh untuk laporan/pimpinan.")
+    st.success("Files are ready to download. Sheets: Combined, per type, Hotspot, Province Summary, Type Summary.")
 
 st.divider()
-st.caption("Dashboard Bencana Alam — Dir 2.3 Deputi 2 BIN | Latsar Aktualisasi | Wilayah Sumatera & Kalimantan")
+st.caption("Disaster Monitoring Dashboard — Directorate 2.3, Deputy 2 BIN | Training Actualization | Sumatra & Kalimantan")
