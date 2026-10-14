@@ -91,6 +91,11 @@ def normalize_df(df):
         for c in ["longitude", "bujur", "lng", "long"]:
             if c in df.columns:
                 df = df.rename(columns={c: "lon"})
+    # pastikan numerik
+    if "lat" in df.columns:
+        df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
+    if "lon" in df.columns:
+        df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
     # korban jiwa
     if "korban_jiwa" not in df.columns:
         for c in ["korban_meninggal", "meninggal", "dead", "fatalities", "korban"]:
@@ -277,25 +282,40 @@ def _display_date(df):
 # ---------------- Tab Peta
 with tabs[0]:
     st.subheader("Peta Kejadian Bencana (Sumatera & Kalimantan)")
-    if pusat_f.empty:
-        st.warning("Tidak ada data.")
+    map_df = pusat_f.copy()
+    if "lat" in map_df.columns:
+        map_df["lat"] = pd.to_numeric(map_df["lat"], errors="coerce")
+    if "lon" in map_df.columns:
+        map_df["lon"] = pd.to_numeric(map_df["lon"], errors="coerce")
+    map_df = map_df.dropna(subset=["lat", "lon"])
+    if map_df.empty:
+        st.warning("Data tidak memiliki koordinat lat/lon yang valid.")
     else:
-        fig = px.scatter_geo(
-            pusat_f, lat="lat", lon="lon",
-            color="tipe_bencana", size="luas_ha",
-            hover_name="kabupaten", hover_data={"provinsi": True, "tipe_bencana": True,
-                                              "luas_ha": True, "tanggal": True,
-                                              "korban_jiwa": True, "ispa": True},
-            color_discrete_map=TIPE_COLOR, size_max=34,
-            projection="natural earth",
-        )
-        fig.update_geos(fitbounds="locations",
-                        showland=True, landcolor="#eaf2ff",
-                        showocean=True, oceancolor="#f0f7ff",
-                        showcountries=True, countrycolor="#94a3b8")
-        fig.update_layout(height=580, margin=dict(l=0, r=0, t=20, b=0),
-                          legend_title="Tipe Bencana")
-        st.plotly_chart(fig, use_container_width=True)
+        if "luas_ha" in map_df.columns:
+            map_df["luas_ha"] = pd.to_numeric(map_df["luas_ha"], errors="coerce").fillna(1).clip(lower=0.1)
+        size_col = "luas_ha" if "luas_ha" in map_df.columns else None
+        hover_name = "kabupaten" if "kabupaten" in map_df.columns else None
+        try:
+            fig = px.scatter_geo(
+                map_df, lat="lat", lon="lon",
+                color="tipe_bencana" if "tipe_bencana" in map_df.columns else None,
+                size=size_col,
+                hover_name=hover_name,
+                hover_data={"provinsi": True, "tipe_bencana": True, "luas_ha": True,
+                            "tanggal": True, "korban_jiwa": True, "ispa": True},
+                color_discrete_map=TIPE_COLOR if "tipe_bencana" in map_df.columns else None,
+                size_max=34,
+                projection="natural earth",
+            )
+            fig.update_geos(fitbounds="locations",
+                            showland=True, landcolor="#eaf2ff",
+                            showocean=True, oceancolor="#f0f7ff",
+                            showcountries=True, countrycolor="#94a3b8")
+            fig.update_layout(height=580, margin=dict(l=0, r=0, t=20, b=0),
+                              legend_title="Tipe Bencana")
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Gagal menampilkan peta: {e}")
 
     colA, colB = st.columns([1, 1])
     with colA:
@@ -312,9 +332,8 @@ with tabs[0]:
         if "tipe_bencana" in pusat_f:
             g = pusat_f.groupby("tipe_bencana").size().reset_index(name="kejadian")
             fig = px.pie(g, values="kejadian", names="tipe_bencana", title="Komposisi Tipe Bencana",
-                         color="tipe_bencana", color_discrete_map=TIPE_COLOR, hole=0.45,
-                         textinfo="value+percent")
-            fig.update_traces(textposition="inside")
+                         color="tipe_bencana", color_discrete_map=TIPE_COLOR, hole=0.45)
+            fig.update_traces(textinfo="value+percent", textposition="inside")
             fig.update_layout(height=420)
             st.plotly_chart(fig, use_container_width=True)
 
@@ -383,20 +402,37 @@ with tabs[2]:
         hdf = hotspot_f[hotspot_f["tanggal"].dt.date == pick]
         h1, h2 = st.columns([3, 1])
         with h1:
-            fig = px.scatter_geo(
-                hdf, lat="lat", lon="lon", color="confidence",
-                size="frp" if "frp" in hdf else None, hover_name="kabupaten",
-                hover_data={"provinsi": True, "satelit": True, "frp": True, "confidence": True},
-                projection="natural earth",
-                color_discrete_map={"Low": "#93c5fd", "Nominal": "#2563eb", "High": "#1e3a8a"},
-                text=hdf["provinsi"].str[:3] if False else None,
-            )
-            fig.update_geos(fitbounds="locations",
-                            showland=True, landcolor="#eaf2ff", showocean=True, oceancolor="#f0f7ff",
-                            showcountries=True, countrycolor="#94a3b8")
-            fig.update_layout(height=520, margin=dict(l=0, r=0, t=20, b=0),
-                              title=f"Hotspot {pick} (n={len(hdf)})")
-            st.plotly_chart(fig, use_container_width=True)
+            hdf_map = hdf.copy()
+            if "lat" in hdf_map.columns:
+                hdf_map["lat"] = pd.to_numeric(hdf_map["lat"], errors="coerce")
+            if "lon" in hdf_map.columns:
+                hdf_map["lon"] = pd.to_numeric(hdf_map["lon"], errors="coerce")
+            hdf_map = hdf_map.dropna(subset=["lat", "lon"])
+            h_hover = {}
+            for c in ["provinsi", "satelit", "frp", "confidence"]:
+                if c in hdf_map.columns:
+                    h_hover[c] = True
+            hover_name = "kabupaten" if "kabupaten" in hdf_map.columns else None
+            try:
+                fig = px.scatter_geo(
+                    hdf_map, lat="lat", lon="lon",
+                    color="confidence" if "confidence" in hdf_map.columns else None,
+                    size="frp" if "frp" in hdf_map.columns else None,
+                    hover_name=hover_name,
+                    hover_data=h_hover if h_hover else None,
+                    projection="natural earth",
+                    color_discrete_map={"Low": "#93c5fd", "Nominal": "#2563eb", "High": "#1e3a8a"} if "confidence" in hdf_map.columns else None,
+                )
+            except Exception as e:
+                st.error(f"Gagal menampilkan peta hotspot: {e}")
+                fig = None
+            if fig is not None:
+                fig.update_geos(fitbounds="locations",
+                                showland=True, landcolor="#eaf2ff", showocean=True, oceancolor="#f0f7ff",
+                                showcountries=True, countrycolor="#94a3b8")
+                fig.update_layout(height=520, margin=dict(l=0, r=0, t=20, b=0),
+                                  title=f"Hotspot {pick} (n={len(hdf_map)})")
+                st.plotly_chart(fig, use_container_width=True)
         with h2:
             st.metric("Hotspot tgl ini", fmt_num(len(hdf)))
             if "provinsi" in hdf:
@@ -411,8 +447,8 @@ with tabs[2]:
                 cg = hdf["confidence"].value_counts().reset_index()
                 cg.columns = ["confidence", "jumlah"]
                 fig2 = px.pie(cg, values="jumlah", names="confidence", title="Confidence Hotspot",
-                              color_discrete_sequence=["#93c5fd", "#2563eb", "#1e3a8a"], hole=0.4,
-                              textinfo="value")
+                              color_discrete_sequence=["#93c5fd", "#2563eb", "#1e3a8a"], hole=0.4)
+                fig2.update_traces(textinfo="value")
                 fig2.update_layout(height=260)
                 st.plotly_chart(fig2, use_container_width=True)
 
