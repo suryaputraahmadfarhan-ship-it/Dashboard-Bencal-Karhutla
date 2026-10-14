@@ -37,7 +37,6 @@ h1, h2, h3 { color: #1e3a8a; }
 """, unsafe_allow_html=True)
 
 TIPE_COLOR = {"Karhutla": "#dc2626", "Banjir": "#2563eb", "Gempa": "#7c3aed", "Bencana Alam Lainnya": "#0891b2"}
-SEVERITY_COLOR = {"Ringan": "#93c5fd", "Sedang": "#3b82f6", "Berat": "#1d4ed8", "Sangat Berat": "#1e3a8a"}
 
 # ---------------------------------------------------------------- helper
 def fmt_num(x, digits=0):
@@ -92,44 +91,59 @@ def normalize_df(df):
         for c in ["longitude", "bujur", "lng", "long"]:
             if c in df.columns:
                 df = df.rename(columns={c: "lon"})
+    # korban jiwa
     if "korban_jiwa" not in df.columns:
         for c in ["korban_meninggal", "meninggal", "dead", "fatalities", "korban"]:
             if c in df.columns:
                 df = df.rename(columns={c: "korban_jiwa"})
     if "korban_jiwa" not in df.columns:
         df["korban_jiwa"] = 0
+    # korban luka -> tetap dihapus dari tampilan/export, tapi simpan underlying jika ada
     if "korban_luka" not in df.columns:
         for c in ["luka", "injured", "injuries"]:
             if c in df.columns:
                 df = df.rename(columns={c: "korban_luka"})
     if "korban_luka" not in df.columns:
         df["korban_luka"] = 0
-    if "ispa_cases" not in df.columns:
-        for c in ["ispa", "dampak_ispa", "kasus_ispa", "ispa"]:
+    # ISPA
+    if "ispa" not in df.columns:
+        for c in ["ispa_cases", "ispa", "dampak_ispa", "kasus_ispa"]:
             if c in df.columns:
-                df = df.rename(columns={c: "ispa_cases"})
-    if "ispa_cases" not in df.columns:
-        df["ispa_cases"] = 0
-    for c in ["korban_jiwa", "korban_luka", "ispa_cases"]:
+                df = df.rename(columns={c: "ispa"})
+    if "ispa" not in df.columns:
+        df["ispa"] = 0
+    for c in ["korban_jiwa", "korban_luka", "ispa"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
     if "pengungsi" not in df.columns:
         df["pengungsi"] = 0
     else:
         df["pengungsi"] = pd.to_numeric(df["pengungsi"], errors="coerce").fillna(0).astype(int)
-    if "severity" not in df.columns and "tingkat" in df.columns:
-        df = df.rename(columns={"tingkat": "severity"})
-    if "severity" not in df.columns:
-        df["severity"] = "Sedang"
+    # status
+    if "status_verifikasi" not in df.columns:
+        df["status_verifikasi"] = "Perlu Verifikasi"
+    # id (opsional, akan dibersihkan saat tampil)
     if "id_kejadian" not in df.columns:
         for c in ["id", "id_laporan", "incident_id"]:
             if c in df.columns:
                 df = df.rename(columns={c: "id_kejadian"})
     if "id_kejadian" not in df.columns:
         df["id_kejadian"] = [f"B-{i:06d}" for i in range(len(df))]
-    if "status_verifikasi" not in df.columns:
-        df["status_verifikasi"] = "Perlu Verifikasi"
     return df
+
+
+def _clean_data(df):
+    """Bersihkan kolom yang tidak perlu tampil/export: id, lat, lon, korban_luka, severity."""
+    if df is None or df.empty:
+        return df
+    d = df.copy()
+    drop_cols = [c for c in ["id_kejadian", "lat", "lon", "korban_luka", "severity"] if c in d.columns]
+    d = d.drop(columns=drop_cols, errors="ignore")
+    # urutan kolom yang rapi
+    preferred = ["tanggal", "provinsi", "kabupaten", "tipe_bencana", "luas_ha",
+                 "korban_jiwa", "pengungsi", "ispa", "penyebab", "status_verifikasi", "sumber"]
+    cols = [c for c in preferred if c in d.columns] + [c for c in d.columns if c not in preferred]
+    return d[cols]
 
 
 @st.cache_data(show_spinner=False)
@@ -239,10 +253,9 @@ with c1:
 with c2:
     st.metric("Total Luas Terdampak (ha)", fmt_num(pusat_f["luas_ha"].sum() if "luas_ha" in pusat_f else 0, 1))
 with c3:
-    korban = (pusat_f["korban_jiwa"].sum() if "korban_jiwa" in pusat_f else 0) + (pusat_f["korban_luka"].sum() if "korban_luka" in pusat_f else 0)
-    st.metric("Total Korban", fmt_num(korban))
+    st.metric("Total Korban (Jiwa)", fmt_num(pusat_f["korban_jiwa"].sum() if "korban_jiwa" in pusat_f else 0))
 with c4:
-    st.metric("Kasus ISPA", fmt_num(pusat_f["ispa_cases"].sum() if "ispa_cases" in pusat_f else 0))
+    st.metric("Kasus ISPA", fmt_num(pusat_f["ispa"].sum() if "ispa" in pusat_f else 0))
 with c5:
     st.metric("Provinsi Terdampak", pusat_f["provinsi"].nunique() if "provinsi" in pusat_f else 0)
 with c6:
@@ -260,6 +273,7 @@ def _display_date(df):
         d["tanggal"] = pd.to_datetime(d["tanggal"], errors="coerce").dt.strftime("%Y-%m-%d")
     return d
 
+
 # ---------------- Tab Peta
 with tabs[0]:
     st.subheader("Peta Kejadian Bencana (Sumatera & Kalimantan)")
@@ -271,7 +285,7 @@ with tabs[0]:
             color="tipe_bencana", size="luas_ha",
             hover_name="kabupaten", hover_data={"provinsi": True, "tipe_bencana": True,
                                               "luas_ha": True, "tanggal": True,
-                                              "korban_jiwa": True, "ispa_cases": True},
+                                              "korban_jiwa": True, "ispa": True},
             color_discrete_map=TIPE_COLOR, size_max=34,
             projection="natural earth",
         )
@@ -287,16 +301,20 @@ with tabs[0]:
     with colA:
         if "provinsi" in pusat_f:
             g = pusat_f.groupby("provinsi").size().reset_index(name="kejadian").sort_values("kejadian", ascending=False).head(15)
+            g["kejadian_label"] = g["kejadian"]
             fig = px.bar(g, x="kejadian", y="provinsi", orientation="h",
                          title="Kejadian per Provinsi", color="kejadian",
-                         color_continuous_scale="Blues")
+                         color_continuous_scale="Blues", text="kejadian_label")
+            fig.update_traces(textposition="outside")
             fig.update_layout(height=420, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
     with colB:
         if "tipe_bencana" in pusat_f:
             g = pusat_f.groupby("tipe_bencana").size().reset_index(name="kejadian")
             fig = px.pie(g, values="kejadian", names="tipe_bencana", title="Komposisi Tipe Bencana",
-                         color="tipe_bencana", color_discrete_map=TIPE_COLOR, hole=0.45)
+                         color="tipe_bencana", color_discrete_map=TIPE_COLOR, hole=0.45,
+                         textinfo="value+percent")
+            fig.update_traces(textposition="inside")
             fig.update_layout(height=420)
             st.plotly_chart(fig, use_container_width=True)
 
@@ -306,46 +324,51 @@ with tabs[1]:
     r1, r2 = st.columns(2)
     with r1:
         if "tipe_bencana" in pusat_f:
-            g = pusat_f.groupby("tipe_bencana").agg(kejadian=("id_kejadian", "count"),
+            g = pusat_f.groupby("tipe_bencana").agg(kejadian=("id_kejadian", "count") if False else ("tipe_bencana", "size"),
                                                    luas=("luas_ha", "sum")).reset_index()
+            # rename count column properly
+            g = pusat_f.groupby("tipe_bencana").size().reset_index(name="kejadian").merge(
+                pusat_f.groupby("tipe_bencana")["luas_ha"].sum().reset_index(name="luas"), on="tipe_bencana")
             fig = px.bar(g, x="tipe_bencana", y=["kejadian", "luas"], barmode="group",
-                         title="Jumlah Kejadian & Luas Terdampak per Tipe")
+                         title="Jumlah Kejadian & Luas Terdampak per Tipe", text_auto=True)
+            fig.update_traces(textposition="outside")
             fig.update_layout(height=380)
             st.plotly_chart(fig, use_container_width=True)
     with r2:
-        if "severity" in pusat_f:
-            g = pusat_f.groupby("severity").size().reset_index(name="kejadian")
-            fig = px.bar(g, x="severity", y="kejadian", title="Distribusi Severity",
-                         color="severity", color_discrete_map=SEVERITY_COLOR)
+        if "tipe_bencana" in pusat_f:
+            g = pusat_f.groupby("tipe_bencana")["korban_jiwa"].sum().reset_index(name="korban")
+            fig = px.bar(g, x="tipe_bencana", y="korban", title="Korban (Jiwa) per Tipe Bencana",
+                         color="tipe_bencana", color_discrete_map=TIPE_COLOR, text="korban")
+            fig.update_traces(textposition="outside")
             fig.update_layout(height=380, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
     r3, r4 = st.columns(2)
     with r3:
         if "tipe_bencana" in pusat_f:
-            g = pusat_f.groupby("tipe_bencana").agg(korban_jiwa=("korban_jiwa", "sum"),
-                                                   korban_luka=("korban_luka", "sum")).reset_index()
-            fig = px.bar(g, x="tipe_bencana", y=["korban_jiwa", "korban_luka"], barmode="group",
-                         title="Korban (Jiwa & Luka) per Tipe Bencana",
-                         color_discrete_sequence=["#dc2626", "#f97316"])
-            fig.update_layout(height=380)
+            g = pusat_f.groupby("tipe_bencana")["ispa"].sum().reset_index(name="ispa")
+            fig = px.bar(g, x="tipe_bencana", y="ispa", title="Kasus ISPA per Tipe Bencana",
+                         color="tipe_bencana", color_discrete_map=TIPE_COLOR, text="ispa")
+            fig.update_traces(textposition="outside")
+            fig.update_layout(height=380, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
     with r4:
         if "tipe_bencana" in pusat_f:
-            g = pusat_f.groupby("tipe_bencana")["ispa_cases"].sum().reset_index()
-            fig = px.bar(g, x="tipe_bencana", y="ispa_cases", title="Kasus ISPA per Tipe Bencana",
-                         color="tipe_bencana", color_discrete_map=TIPE_COLOR)
+            g = pusat_f.groupby("tipe_bencana").agg(luas=("luas_ha", "sum")).reset_index()
+            g["luas_label"] = g["luas"].round(1)
+            fig = px.bar(g, x="tipe_bencana", y="luas", title="Luas Terdampak per Tipe",
+                         color="tipe_bencana", color_discrete_map=TIPE_COLOR, text="luas_label")
+            fig.update_traces(textposition="outside")
             fig.update_layout(height=380, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("#### Rekap per Provinsi")
     if "provinsi" in pusat_f:
         g = pusat_f.groupby("provinsi").agg(
-            kejadian=("id_kejadian", "count"),
+            kejadian=("tipe_bencana", "size"),
             luas_ha=("luas_ha", "sum"),
             korban_jiwa=("korban_jiwa", "sum"),
-            korban_luka=("korban_luka", "sum"),
-            ispa_cases=("ispa_cases", "sum"),
+            ispa=("ispa", "sum"),
         ).reset_index().sort_values("kejadian", ascending=False)
         st.dataframe(g, use_container_width=True, hide_index=True)
 
@@ -366,6 +389,7 @@ with tabs[2]:
                 hover_data={"provinsi": True, "satelit": True, "frp": True, "confidence": True},
                 projection="natural earth",
                 color_discrete_map={"Low": "#93c5fd", "Nominal": "#2563eb", "High": "#1e3a8a"},
+                text=hdf["provinsi"].str[:3] if False else None,
             )
             fig.update_geos(fitbounds="locations",
                             showland=True, landcolor="#eaf2ff", showocean=True, oceancolor="#f0f7ff",
@@ -377,12 +401,18 @@ with tabs[2]:
             st.metric("Hotspot tgl ini", fmt_num(len(hdf)))
             if "provinsi" in hdf:
                 g = hdf.groupby("provinsi").size().reset_index(name="hotspot").sort_values("hotspot", ascending=False)
-                st.dataframe(g, use_container_width=True, hide_index=True)
+                g["label"] = g["hotspot"]
+                figbar = px.bar(g, x="hotspot", y="provinsi", orientation="h", text="label",
+                                title="Hotspot per Provinsi", color="hotspot", color_continuous_scale="Blues")
+                figbar.update_traces(textposition="outside")
+                figbar.update_layout(height=320, showlegend=False)
+                st.plotly_chart(figbar, use_container_width=True)
             if "confidence" in hdf:
                 cg = hdf["confidence"].value_counts().reset_index()
                 cg.columns = ["confidence", "jumlah"]
                 fig2 = px.pie(cg, values="jumlah", names="confidence", title="Confidence Hotspot",
-                              color_discrete_sequence=["#93c5fd", "#2563eb", "#1e3a8a"], hole=0.4)
+                              color_discrete_sequence=["#93c5fd", "#2563eb", "#1e3a8a"], hole=0.4,
+                              textinfo="value")
                 fig2.update_layout(height=260)
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -392,31 +422,47 @@ with tabs[2]:
             ts["tgl"] = ts["tanggal"].dt.date
             g = ts.groupby("tgl").size().reset_index(name="hotspot")
             fig = px.area(g, x="tgl", y="hotspot", title="Jumlah Hotspot per Hari",
-                          color_discrete_sequence=["#2563eb"])
+                          color_discrete_sequence=["#2563eb"], text="hotspot")
+            fig.update_traces(textposition="top center")
             fig.update_layout(height=340)
             st.plotly_chart(fig, use_container_width=True)
 
 # ---------------- Tab Tren
 with tabs[3]:
-    st.subheader("Tren Waktu")
+    st.subheader("Tren Waktu per Bencana")
     if "tanggal" in pusat_f and pusat_f["tanggal"].notna().any():
+        # Tren bulanan terpisah per tipe
         ts = pusat_f.copy()
         ts["bulan"] = ts["tanggal"].dt.to_period("M").astype(str)
-        g = ts.groupby("bulan").agg(kejadian=("id_kejadian", "count"),
-                                    luas=("luas_ha", "sum"),
-                                    korban=("korban_jiwa", "sum"),
-                                    ispa=("ispa_cases", "sum")).reset_index().sort_values("bulan")
-        fig = px.line(g, x="bulan", y=["kejadian", "luas", "korban", "ispa"], title="Tren Bulanan",
-                      markers=True)
-        fig.update_layout(height=440, xaxis_tickangle=-45)
+        g = ts.groupby(["bulan", "tipe_bencana"]).size().reset_index(name="kejadian")
+        fig = px.line(g, x="bulan", y="kejadian", color="tipe_bencana",
+                      facet_col="tipe_bencana", facet_col_wrap=2,
+                      title="Tren Kejadian Bulanan per Tipe Bencana", markers=True, text="kejadian")
+        fig.update_traces(textposition="top center")
+        fig.update_layout(height=480, xaxis_tickangle=-45, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
+        # Tren bulanan gabungan
         ts2 = pusat_f.copy()
-        ts2["minggu"] = ts2["tanggal"].dt.to_period("W").astype(str)
-        g2 = ts2.groupby("minggu").size().reset_index(name="kejadian").sort_values("minggu")
-        fig2 = px.area(g2, x="minggu", y="kejadian", title="Tren Kejadian Mingguan", color_discrete_sequence=["#1e3a8a"])
-        fig2.update_layout(height=340, xaxis_tickangle=-60)
+        ts2["bulan"] = ts2["tanggal"].dt.to_period("M").astype(str)
+        g2 = ts2.groupby("bulan").agg(kejadian=("tipe_bencana", "size"),
+                                      luas=("luas_ha", "sum"),
+                                      korban=("korban_jiwa", "sum"),
+                                      ispa=("ispa", "sum")).reset_index().sort_values("bulan")
+        fig2 = px.line(g2, x="bulan", y=["kejadian", "luas", "korban", "ispa"], title="Tren Bulanan (Gabungan)",
+                      markers=True)
+        fig2.update_layout(height=420, xaxis_tickangle=-45)
         st.plotly_chart(fig2, use_container_width=True)
+
+        # Tren mingguan per tipe
+        ts3 = pusat_f.copy()
+        ts3["minggu"] = ts3["tanggal"].dt.to_period("W").astype(str)
+        g3 = ts3.groupby(["minggu", "tipe_bencana"]).size().reset_index(name="kejadian")
+        fig3 = px.area(g3, x="minggu", y="kejadian", color="tipe_bencana",
+                       title="Tren Kejadian Mingguan per Tipe Bencana",
+                       color_discrete_map=TIPE_COLOR)
+        fig3.update_layout(height=360, xaxis_tickangle=-60)
+        st.plotly_chart(fig3, use_container_width=True)
     else:
         st.warning("Kolom tanggal tidak tersedia.")
 
@@ -424,7 +470,7 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("Data & Kualitas Data")
     st.markdown("**Data Pusat (filter)**")
-    st.dataframe(_display_date(pusat_f), use_container_width=True, height=280)
+    st.dataframe(_display_date(_clean_data(pusat_f)), use_container_width=True, height=280)
     if hotspot_f is not None:
         st.markdown("**Data Hotspot (filter)**")
         st.dataframe(_display_date(hotspot_f), use_container_width=True, height=220)
@@ -447,9 +493,8 @@ with tabs[4]:
 # ---------------- Tab Export
 with tabs[5]:
     st.subheader("Export Laporan")
-    template_cols = ["id_kejadian", "tanggal", "provinsi", "kabupaten", "lat", "lon",
-                     "tipe_bencana", "luas_ha", "korban_jiwa", "korban_luka", "pengungsi",
-                     "ispa_cases", "penyebab", "severity", "status_verifikasi", "sumber"]
+    template_cols = ["tanggal", "provinsi", "kabupaten", "tipe_bencana", "luas_ha",
+                     "korban_jiwa", "pengungsi", "ispa", "penyebab", "status_verifikasi", "sumber"]
     hotspot_cols = ["id_hotspot", "tanggal", "provinsi", "kabupaten", "lat", "lon",
                     "confidence", "satelit", "frp", "sumber"]
     tmpl = pd.DataFrame(columns=template_cols)
@@ -468,40 +513,36 @@ with tabs[5]:
         available = [t for t in tipe_list if t in pusat_f["tipe_bencana"].unique().tolist()]
         if available:
             tipe_choice = st.selectbox("Pilih tipe untuk CSV", available)
-            sub = pusat_f[pusat_f["tipe_bencana"] == tipe_choice]
+            sub = _clean_data(pusat_f[pusat_f["tipe_bencana"] == tipe_choice])
             st.download_button(f"⬇️ Download CSV: {tipe_choice}", sub.to_csv(index=False).encode("utf-8"),
                                file_name=f"data_{tipe_choice.lower().replace(' ', '_')}.csv", mime="text/csv")
             st.caption(f"Jumlah record {tipe_choice}: {len(sub)}")
 
-    csv_bytes = pusat_f.to_csv(index=False).encode("utf-8")
+    csv_bytes = _clean_data(pusat_f).to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Download Gabungan (CSV - filter saat ini)", csv_bytes,
                        file_name="data_bencana_gabungan.csv", mime="text/csv")
 
     st.markdown("#### Download Excel (terpisah per tipe + gabungan)")
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        pusat_f.to_excel(w, index=False, sheet_name="Gabungan")
+        _clean_data(pusat_f).to_excel(w, index=False, sheet_name="Gabungan")
         if "tipe_bencana" in pusat_f:
-            sheet_names_used = set()
             for t in pusat_f["tipe_bencana"].unique():
                 nm = t[:28]
-                if nm in sheet_names_used:
-                    nm = nm[:25] + "_2"
-                sheet_names_used.add(nm)
-                pusat_f[pusat_f["tipe_bencana"] == t].to_excel(w, index=False, sheet_name=nm)
+                _clean_data(pusat_f[pusat_f["tipe_bencana"] == t]).to_excel(w, index=False, sheet_name=nm)
         if hotspot_f is not None:
             hotspot_f.to_excel(w, index=False, sheet_name="Hotspot")
         if "provinsi" in pusat_f:
             summ = pusat_f.groupby("provinsi").agg(
-                kejadian=("id_kejadian", "count"), luas_ha=("luas_ha", "sum"),
-                korban_jiwa=("korban_jiwa", "sum"), korban_luka=("korban_luka", "sum"),
-                ispa_cases=("ispa_cases", "sum")).reset_index()
+                kejadian=("tipe_bencana", "size"), luas_ha=("luas_ha", "sum"),
+                korban_jiwa=("korban_jiwa", "sum"),
+                ispa=("ispa", "sum")).reset_index()
             summ.to_excel(w, index=False, sheet_name="Rekap Provinsi")
         if "tipe_bencana" in pusat_f:
             summ2 = pusat_f.groupby("tipe_bencana").agg(
-                kejadian=("id_kejadian", "count"), luas_ha=("luas_ha", "sum"),
-                korban_jiwa=("korban_jiwa", "sum"), korban_luka=("korban_luka", "sum"),
-                ispa_cases=("ispa_cases", "sum")).reset_index()
+                kejadian=("tipe_bencana", "size"), luas_ha=("luas_ha", "sum"),
+                korban_jiwa=("korban_jiwa", "sum"),
+                ispa=("ispa", "sum")).reset_index()
             summ2.to_excel(w, index=False, sheet_name="Rekap Tipe")
     st.download_button("⬇️ Download Laporan Lengkap (Excel)", buf.getvalue(),
                        file_name="laporan_bencana.xlsx",
