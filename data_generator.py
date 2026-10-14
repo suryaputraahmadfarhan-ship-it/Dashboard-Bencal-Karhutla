@@ -23,7 +23,7 @@ PROVINSI = {
     "Kalimantan Utara": {"lat": 3.0, "lon": 116.7, "kab": ["Bulungan", "Nunukan", "Tana Tidung"]},
 }
 
-TIPE_BENCANA = ["Karhutla", "Banjir", "Bencana Alam Lainnya"]
+TIPE_BENCANA = ["Karhutla", "Banjir", "Gempa", "Bencana Alam Lainnya"]
 SEVERITY = ["Ringan", "Sedang", "Berat", "Sangat Berat"]
 STATUS_LAPORAN = ["Lengkap", "Belum Lengkap", "Perlu Verifikasi"]
 PENYEBAB_KARHUTLA = ["Alam (kekeringan)", "Manusia (pembakaran lahan)", "Pertanian", "Perkebunan", "Tidak diketahui"]
@@ -46,7 +46,7 @@ def generate_incidents(n=480, seed=42):
     for i, prov in enumerate(p_choice):
         info = PROVINSI[prov]
         kab = rng.choice(info["kab"])
-        tipe = rng.choice(TIPE_BENCANA, p=[0.35, 0.40, 0.25])
+        tipe = rng.choice(TIPE_BENCANA, p=[0.30, 0.35, 0.15, 0.20])
         rows.append({
             "id_kejadian": f"B-{100000 + i}",
             "tanggal": None,
@@ -59,10 +59,14 @@ def generate_incidents(n=480, seed=42):
             "korban_jiwa": int(rng.poisson(0.3)),
             "korban_luka": int(rng.poisson(2.5)),
             "pengungsi": int(rng.poisson(35)),
-            "ispa_cases": int(rng.poisson(12 if tipe == "Karhutla" else 3)),
+            "ispa_cases": int(rng.poisson(12 if tipe == "Karhutla" else 2)),
             "severity": rng.choice(SEVERITY, p=[0.40, 0.35, 0.20, 0.05]),
-            "penyebab": rng.choice(PENYEBAB_KARHUTLA) if tipe == "Karhutla" else rng.choice(
-                ["Hujan deras", "Luapan sungai", "Drainase buruk", "Topografi", "Tidak diketahui"]),
+            "penyebab": (
+                rng.choice(PENYEBAB_KARHUTLA) if tipe == "Karhutla"
+                else rng.choice(["Hujan deras", "Luapan sungai", "Drainase buruk", "Topografi", "Tidak diketahui"]) if tipe == "Banjir"
+                else rng.choice(["Tektonik", "Subduksi", "Sesar aktif", "Vulkanik", "Tidak diketahui"]) if tipe == "Gempa"
+                else rng.choice(["Cuaca ekstrem", "Longsor", "Kekeringan", "Tidal wave", "Tidak diketahui"])
+            ),
             "status_verifikasi": rng.choice(STATUS_LAPORAN, p=[0.78, 0.14, 0.08]),
             "sumber": "Pusat (Dir 2.3 Deputi 2)",
         })
@@ -80,6 +84,7 @@ def generate_hotspots(seed=42, start="2025-01-01", end="2025-10-31"):
     start_ts = pd.Timestamp(start)
     end_ts = pd.Timestamp(end)
     span = (end_ts - start_ts).days
+    # 1-3 hotspots per day
     n_days = min(span + 1, 120)
     chosen_days = sorted(rng.choice(range(span + 1), size=n_days, replace=False))
     hid = 0
