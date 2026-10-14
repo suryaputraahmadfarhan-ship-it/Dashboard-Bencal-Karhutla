@@ -59,8 +59,7 @@ def generate_incidents(n=480, seed=42):
             "korban_jiwa": int(rng.poisson(0.3)),
             "korban_luka": int(rng.poisson(2.5)),
             "pengungsi": int(rng.poisson(35)),
-            "ispa_cases": int(rng.poisson(12 if tipe == "Karhutla" else 2)),
-            "severity": rng.choice(SEVERITY, p=[0.40, 0.35, 0.20, 0.05]),
+            "ispa": int(rng.poisson(12 if tipe == "Karhutla" else 2)),
             "penyebab": (
                 rng.choice(PENYEBAB_KARHUTLA) if tipe == "Karhutla"
                 else rng.choice(["Hujan deras", "Luapan sungai", "Drainase buruk", "Topografi", "Tidak diketahui"]) if tipe == "Banjir"
