@@ -11,7 +11,7 @@ import streamlit as st
 from data_generator import generate_all, PROVINSI, TIPE_BENCANA
 
 st.set_page_config(
-    page_title="Dashboard Bencana Alam - Dir 2.3 BIN",
+    page_title="Dashboard Bencana Alam - Direktorat 2.3 BIN",
     page_icon="🛰️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -214,6 +214,15 @@ else:
 if pusat_df is None:
     st.info("Silakan upload file data pusat, atau pilih mode Data Sintetis (Demo).")
     st.stop()
+
+# Pastikan kolom ISPA konsisten (dukung format lama ispa_cases)
+for _df in [pusat_df, hotspot_df]:
+    if _df is None:
+        continue
+    if "ispa_cases" in _df.columns and "ispa" not in _df.columns:
+        _df.rename(columns={"ispa_cases": "ispa"}, inplace=True)
+    if "ispa" not in _df.columns:
+        _df["ispa"] = 0
 
 pusat_df["tanggal"] = pd.to_datetime(pusat_df["tanggal"], errors="coerce")
 if hotspot_df is not None:
