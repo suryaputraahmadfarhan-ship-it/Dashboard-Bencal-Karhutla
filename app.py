@@ -1,55 +1,76 @@
 # -*- coding: utf-8 -*-
-"""Dashboard Karhutla - Optimalisasi Sinkronisasi Data Pusat & Daerah (Streamlit)."""
+"""Dashboard Bencana Alam - Dir 2.3 (BIN Deputi 2) - Wilayah Sumatera & Kalimantan."""
 import io
-from datetime import date, timedelta
+from datetime import date
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
-from data_generator import generate_all, PROVINSI
+from data_generator import generate_all, PROVINSI, TIPE_BENCANA
 
-# ---------------------------------------------------------------- configurations
 st.set_page_config(
-    page_title="Dashboard Karhutla - Sinkronisasi Pusat & Daerah",
-    page_icon="🔥",
+    page_title="Dashboard Bencana Alam - Dir 2.3 BIN",
+    page_icon="🛰️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-SEVERITY_COLOR = {
-    "Ringan": "#9ae6b4", "Sedang": "#f6e05e",
-    "Berat": "#f6ad55", "Sangat Berat": "#fc8181",
+# ---------------------------------------------------------------- blue theme
+st.markdown("""
+<style>
+:root {
+  --bin-blue: #1e3a8a;
+  --bin-blue2: #2563eb;
+  --bin-light: #dbeafe;
 }
-STATUS_COLOR = {
-    "Sinkron": "#48bb78",
-    "Sinkron (angka OK, penyebab beda)": "#68d391",
-    "Mismatch (angka beda)": "#ed8936",
-    "MISS - Daerah tidak melapor": "#f56565",
-    "Ekstra - Laporan daerah tanpa pusat": "#a0aec0",
+.stApp { background: linear-gradient(180deg, #f0f6ff 0%, #ffffff 60%); }
+div[data-testid="stMetric"] {
+  background: #ffffff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 2px 8px rgba(30,58,138,0.06);
 }
+section[data-testid="stSidebar"] {
+  background: linear-gradient(180deg, #1e3a8a 0%, #1e40af 100%);
+  color: #ffffff;
+}
+section[data-testid="stSidebar"] * { color: #ffffff !important; }
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stMultiSelect label,
+section[data-testid="stSidebar"] .stDateInput label,
+section[data-testid="stSidebar"] .stRadio label { color: #ffffff !important; }
+h1, h2, h3 { color: #1e3a8a; }
+.badge {
+  display:inline-block; padding:4px 10px; border-radius:999px;
+  background:#dbeafe; color:#1e3a8a; font-weight:600; font-size:12px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+TIPE_COLOR = {"Karhutla": "#dc2626", "Banjir": "#2563eb", "Bencana Alam Lainnya": "#0891b2"}
+SEVERITY_COLOR = {"Ringan": "#93c5fd", "Sedang": "#3b82f6", "Berat": "#1d4ed8", "Sangat Berat": "#1e3a8a"}
 
 # ---------------------------------------------------------------- helpers
 def fmt_num(x, digits=0):
-    if x is None or (isinstance(x, float) and np.isnan(x)):
+    if x is None or (isinstance(x, float) and (np.isnan(x))):
         return "-"
     return f"{x:,.{digits}f}".replace(",", ".")
 
 
-def load_uploaded(uploaded_file):
+def load_uploaded(f):
     try:
-        if uploaded_file.name.lower().endswith((".xlsx", ".xls")):
-            return pd.read_excel(uploaded_file)
-        return pd.read_csv(uploaded_file)
+        if f.name.lower().endswith((".xlsx", ".xls")):
+            return pd.read_excel(f)
+        return pd.read_csv(f)
     except Exception as e:
         st.error(f"Gagal membaca file: {e}")
         return None
 
 
 def normalize_df(df):
-    """Normalisasi kolom minimal yang diperlukan."""
     df = df.copy()
     # tanggal
     for c in ["tanggal", "date", "tgl"]:
@@ -60,17 +81,24 @@ def normalize_df(df):
         df["tanggal"] = pd.NaT
     # provinsi
     if "provinsi" not in df.columns:
-        for c in ["province", "propinsi"]:
+        for c in ["province", "propinsi", "prov"]:
             if c in df.columns:
                 df = df.rename(columns={c: "provinsi"})
     # kabupaten
     if "kabupaten" not in df.columns:
-        for c in ["kab", "kota", "kab_kota"]:
+        for c in ["kab", "kota", "kab_kota", "kabupaten_kota"]:
             if c in df.columns:
                 df = df.rename(columns={c: "kabupaten"})
+    # tipe bencana
+    if "tipe_bencana" not in df.columns:
+        for c in ["tipe", "jenis", "jenis_bencana", "type"]:
+            if c in df.columns:
+                df = df.rename(columns={c: "tipe_bencana"})
+    if "tipe_bencana" not in df.columns:
+        df["tipe_bencana"] = "Bencana Alam Lainnya"
     # luas
     if "luas_ha" not in df.columns:
-        for c in ["luas", "area_ha", "luasan"]:
+        for c in ["luas", "area_ha", "luasan", "luas_terdampak", "luas_terdampak_ha"]:
             if c in df.columns:
                 df = df.rename(columns={c: "luas_ha"})
     if "luas_ha" in df.columns:
@@ -84,399 +112,408 @@ def normalize_df(df):
         for c in ["longitude", "bujur", "lng", "long"]:
             if c in df.columns:
                 df = df.rename(columns={c: "lon"})
-    # penyebab
-    if "penyebab" not in df.columns and "cause" in df.columns:
-        df = df.rename(columns={"cause": "penyebab"})
+    # korban
+    if "korban_jiwa" not in df.columns:
+        for c in ["korban_meninggal", "meninggal", "dead", "korban"]:
+            if c in df.columns:
+                df = df.rename(columns={c: "korban_jiwa"})
+    if "korban_jiwa" not in df.columns:
+        df["korban_jiwa"] = 0
+    if "korban_luka" not in df.columns:
+        for c in ["luka", "injured"]:
+            if c in df.columns:
+                df = df.rename(columns={c: "korban_luka"})
+    if "korban_luka" not in df.columns:
+        df["korban_luka"] = 0
+    # ispa
+    if "ispa_cases" not in df.columns:
+        for c in ["ispa", "dampak_ispa", "kasus_ispa"]:
+            if c in df.columns:
+                df = df.rename(columns={c: "ispa_cases"})
+    if "ispa_cases" not in df.columns:
+        df["ispa_cases"] = 0
+    # numeric
+    for c in ["korban_jiwa", "korban_luka", "ispa_cases"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
+    # pengungsi
+    if "pengungsi" not in df.columns:
+        df["pengungsi"] = 0
+    else:
+        df["pengungsi"] = pd.to_numeric(df["pengungsi"], errors="coerce").fillna(0).astype(int)
     # severity
     if "severity" not in df.columns and "tingkat" in df.columns:
         df = df.rename(columns={"tingkat": "severity"})
+    if "severity" not in df.columns:
+        df["severity"] = "Sedang"
     # id
-    if "id_laporan" not in df.columns:
-        df["id_laporan"] = [f"UP-{i:06d}" for i in range(len(df))]
+    if "id_kejadian" not in df.columns:
+        for c in ["id", "id_laporan"]:
+            if c in df.columns:
+                df = df.rename(columns={c: "id_kejadian"})
+    if "id_kejadian" not in df.columns:
+        df["id_kejadian"] = [f"B-{i:06d}" for i in range(len(df))]
+    # status
+    if "status_verifikasi" not in df.columns:
+        df["status_verifikasi"] = "Perlu Verifikasi"
     return df
 
 
 @st.cache_data(show_spinner=False)
-def get_default_data(seed=42, drop_rate=0.12, mismatch_rate=0.15, extra_rate=0.08):
-    return generate_all(seed, drop_rate=drop_rate, mismatch_rate=mismatch_rate,
-                       extra_rate=extra_rate)
+def get_default_data(seed=42):
+    inc, hs = generate_all(seed=seed)
+    return inc, hs
 
+
+# ---------------------------------------------------------------- header
+st.markdown("""
+<div style="display:flex; align-items:center; gap:18px; padding:10px 0 6px 0;">
+  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Lambang_Badan_Intelijen_Negara.svg/120px-Lambang_Badan_Intelijen_Negara.svg.png" width="70"/>
+  <div>
+    <div style="font-size:13px; color:#1e3a8a; font-weight:600; letter-spacing:0.5px;">
+      BADAN INTELIJEN NEGARA &middot; DEPUTI 2 &middot; DIREKTORAT 2.3
+    </div>
+    <h1 style="margin:0; color:#1e3a8a;">Dashboard Monitoring Bencana Alam</h1>
+    <div style="color:#334155; font-size:14px;">
+      Wilayah Kerja: Sumatera &amp; Kalimantan &nbsp;|&nbsp; Monitoring Kejadian, Luas Terdampak, Korban, dan Dampak (ISPA)
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------------- sidebar
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Lambang_Badan_Intelijen_Negara.svg/200px-Lambang_Badan_Intelijen_Negara.svg.png",
-             width=80)
-    st.title("🔥 Dashboard Karhutla")
-    st.caption("Optimalisasi Sinkronisasi Data Pusat & Daerah")
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Lambang_Badan_Intelijen_Negara.svg/120px-Lambang_Badan_Intelijen_Negara.svg.png", width=70)
+    st.title("🛰️ Dashboard Bencana")
+    st.caption("Dir 2.3 - Deputi 2 BIN")
     st.divider()
 
-    data_source = st.radio(
-        "Sumber data",
-        ["Data Sintetis (Demo)", "Upload CSV/Excel (Pusat)", "Upload keduanya (Pusat & Daerah)"],
-        index=0,
-    )
+    data_source = st.radio("Sumber data", ["Data Sintetis (Demo)", "Upload CSV/Excel (Pusat)"], index=0)
 
     seed = 42
     if data_source == "Data Sintetis (Demo)":
-        seed = st.slider("Seed data sintetis", 1, 999, 42)
-        drop_rate = st.slider("Simulasi miss daerah (%)", 0, 40, 12) / 100
-        mismatch_rate = st.slider("Simulasi mismatch (%)", 0, 40, 15) / 100
-    else:
-        drop_rate = None
-        mismatch_rate = None
+        seed = st.slider("Seed data", 1, 999, 42)
 
     st.divider()
     st.subheader("Filter")
-    provinsi_filter = None
-    date_range = None
-
+    tipe_sel = None
+    prov_sel = None
 
 # ---------------------------------------------------------------- load data
 if data_source == "Data Sintetis (Demo)":
-    pusat_raw, daerah_raw, recon_raw = get_default_data(seed, drop_rate, mismatch_rate)
-    # re-simulate drop/mismatch tidak diperlukan untuk demo fixed generator
-    # (generator sudah pakai seed default params); tetap tampilkan
-    pusat_df = pusat_raw.copy()
-    daerah_df = daerah_raw.copy()
-    recon_df = recon_raw.copy()
+    inc_raw, hs_raw = get_default_data(seed)
+    pusat_df = inc_raw.copy()
+    hotspot_df = hs_raw.copy()
 else:
     st.sidebar.subheader("Upload data Pusat")
-    pusat_file = st.sidebar.file_uploader("File Pusat", type=["csv", "xlsx", "xls"], key="pusat")
+    pusat_file = st.sidebar.file_uploader("File Pusat (Bencana)", type=["csv", "xlsx", "xls"], key="pusat")
     pusat_df = None
-    daerah_df = None
-    recon_df = None
+    hotspot_df = None
     if pusat_file is not None:
         tmp = load_uploaded(pusat_file)
         if tmp is not None:
             pusat_df = normalize_df(tmp)
-            if data_source == "Upload CSV/Excel (Pusat)":
-                # tanpa daerah -> daerah = None, recon tidak tersedia
-                pass
-    if data_source == "Upload keduanya (Pusat & Daerah)":
-        st.sidebar.subheader("Upload data Daerah")
-        daerah_file = st.sidebar.file_uploader("File Daerah", type=["csv", "xlsx", "xls"], key="daerah")
-        if daerah_file is not None:
-            tmp = load_uploaded(daerah_file)
-            if tmp is not None:
-                daerah_df = normalize_df(tmp)
-        if pusat_df is not None and daerah_df is not None:
-            from data_generator import reconcile
-            # ensure tanggal datetime
-            pusat_df["tanggal"] = pd.to_datetime(pusat_df["tanggal"], errors="coerce")
-            daerah_df["tanggal"] = pd.to_datetime(daerah_df["tanggal"], errors="coerce")
-            recon_df = reconcile(pusat_df, daerah_df)
+            hotspot_file = st.sidebar.file_uploader("File Hotspot (opsional)", type=["csv", "xlsx", "xls"], key="hs")
+            if hotspot_file is not None:
+                htmp = load_uploaded(hotspot_file)
+                if htmp is not None:
+                    hotspot_df = normalize_df(htmp)
 
-
-# fallback: jika belum ada data pusat
 if pusat_df is None:
-    st.info("Silakan upload file data Pusat terlebih dahulu, atau pilih mode Data Sintetis (Demo).")
+    st.info("Silakan upload file data Pusat, atau pilih mode Data Sintetis (Demo).")
     st.stop()
 
 pusat_df["tanggal"] = pd.to_datetime(pusat_df["tanggal"], errors="coerce")
-if daerah_df is not None:
-    daerah_df["tanggal"] = pd.to_datetime(daerah_df["tanggal"], errors="coerce")
-if recon_df is not None:
-    recon_df["tanggal"] = pd.to_datetime(recon_df["tanggal"], errors="coerce")
+if hotspot_df is not None:
+    hotspot_df["tanggal"] = pd.to_datetime(hotspot_df["tanggal"], errors="coerce")
 
-# ---------------------------------------------------------------- sidebar filters (isi setelah data load)
+# sidebar filters
 with st.sidebar:
+    all_tipe = [t for t in TIPE_BENCANA if t in pusat_df["tipe_bencana"].unique()] or sorted(pusat_df["tipe_bencana"].dropna().unique().tolist())
+    tipe_sel = st.multiselect("Tipe Bencana", all_tipe, default=all_tipe)
     all_provs = sorted(pusat_df["provinsi"].dropna().unique().tolist())
     prov_sel = st.multiselect("Provinsi", all_provs, default=[])
     valid_dates = pusat_df["tanggal"].dropna()
-    if len(valid_dates) > 0:
-        dmin = valid_dates.min().date()
-        dmax = valid_dates.max().date()
-    else:
-        dmin = date(2025, 1, 1); dmax = date(2025, 12, 31)
+    dmin = valid_dates.min().date() if len(valid_dates) else date(2025, 1, 1)
+    dmax = valid_dates.max().date() if len(valid_dates) else date(2025, 12, 31)
     dr = st.date_input("Rentang tanggal", value=(dmin, dmax), min_value=dmin, max_value=dmax)
     if not isinstance(dr, (tuple, list)):
         dr = (dr, dr)
-    st.divider()
-    st.caption("Deputi 2 - Laporan Aktualisasi")
 
 # apply filters
-mask_p = pd.Series(True, index=pusat_df.index)
+mask = pd.Series(True, index=pusat_df.index)
+if tipe_sel:
+    mask &= pusat_df["tipe_bencana"].isin(tipe_sel)
 if prov_sel:
-    mask_p &= pusat_df["provinsi"].isin(prov_sel)
+    mask &= pusat_df["provinsi"].isin(prov_sel)
 if isinstance(dr, (tuple, list)) and len(dr) == 2:
-    start_d, end_d = dr
-    mask_p &= pusat_df["tanggal"].between(pd.Timestamp(start_d), pd.Timestamp(end_d))
-pusat_f = pusat_df[mask_p].copy()
+    mask &= pusat_df["tanggal"].between(pd.Timestamp(dr[0]), pd.Timestamp(dr[1]))
+pusat_f = pusat_df[mask].copy()
 
-if daerah_df is not None:
-    mask_d = pd.Series(True, index=daerah_df.index)
+if hotspot_df is not None:
+    hmask = pd.Series(True, index=hotspot_df.index)
     if prov_sel:
-        mask_d &= daerah_df["provinsi"].isin(prov_sel)
+        hmask &= hotspot_df["provinsi"].isin(prov_sel)
     if isinstance(dr, (tuple, list)) and len(dr) == 2:
-        mask_d &= daerah_df["tanggal"].between(pd.Timestamp(start_d), pd.Timestamp(end_d))
-    daerah_f = daerah_df[mask_d].copy()
+        hmask &= hotspot_df["tanggal"].between(pd.Timestamp(dr[0]), pd.Timestamp(dr[1]))
+    hotspot_f = hotspot_df[hmask].copy()
 else:
-    daerah_f = None
-
-if recon_df is not None:
-    mask_r = pd.Series(True, index=recon_df.index)
-    if prov_sel:
-        mask_r &= recon_df["provinsi"].isin(prov_sel)
-    if isinstance(dr, (tuple, list)) and len(dr) == 2:
-        mask_r &= recon_df["tanggal"].between(pd.Timestamp(start_d), pd.Timestamp(end_d))
-    recon_f = recon_df[mask_r].copy()
-else:
-    recon_f = None
-
-# ---------------------------------------------------------------- header
-st.title("🔥 Dashboard Kebakaran Hutan dan Lahan (Karhutla)")
-st.markdown(
-    "**Optimalisasi Sinkronisasi Data Pusat dan Daerah** — monitoring akurasi & efektivitas "
-    "penyusunan laporan bencana alam/karhutla, meminimalisir miss data."
-)
+    hotspot_f = None
 
 # ---------------------------------------------------------------- KPIs
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-with col1:
-    st.metric("Total Kejadian (Pusat)", f"{len(pusat_f):,}".replace(",", "."))
-with col2:
-    st.metric("Total Luas (ha)", fmt_num(pusat_f["luas_ha"].sum() if "luas_ha" in pusat_f else 0, 1))
-with col3:
+st.subheader("Indikator Utama")
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+with c1:
+    st.metric("Total Kejadian", fmt_num(len(pusat_f)))
+with c2:
+    st.metric("Total Luas Terdampak (ha)", fmt_num(pusat_f["luas_ha"].sum() if "luas_ha" in pusat_f else 0, 1))
+with c3:
+    korban = (pusat_f["korban_jiwa"].sum() if "korban_jiwa" in pusat_f else 0) + (pusat_f["korban_luka"].sum() if "korban_luka" in pusat_f else 0)
+    st.metric("Total Korban", fmt_num(korban))
+with c4:
+    st.metric("Kasus ISPA", fmt_num(pusat_f["ispa_cases"].sum() if "ispa_cases" in pusat_f else 0))
+with c5:
     st.metric("Provinsi Terdampak", pusat_f["provinsi"].nunique() if "provinsi" in pusat_f else 0)
-with col4:
-    st.metric("Kabupaten Terdampak", pusat_f["kabupaten"].nunique() if "kabupaten" in pusat_f else 0)
-with col5:
-    avg = pusat_f["luas_ha"].mean() if "luas_ha" in pusat_f else 0
-    st.metric("Rata-rata Luas (ha)", fmt_num(avg, 2))
-with col6:
-    miss_count = 0
-    if recon_f is not None:
-        miss_count = (recon_f["status"] == "MISS - Daerah tidak melapor").sum()
-    st.metric("Miss Data (Daerah)", int(miss_count))
+with c6:
+    hs_today = 0
+    if hotspot_f is not None and not hotspot_f.empty:
+        last_d = hotspot_f["tanggal"].max()
+        hs_today = (hotspot_f["tanggal"].dt.date == last_d.date()).sum()
+    st.metric("Hotspot (hari terakhir data)", fmt_num(hs_today))
 
-if recon_f is not None:
-    total_keys = len(recon_f)
-    n_sinkron = (recon_f["status"].str.startswith("Sinkron")).sum()
-    n_miss = (recon_f["status"] == "MISS - Daerah tidak melapor").sum()
-    n_mismatch = (recon_f["status"] == "Mismatch (angka beda)").sum()
-    n_extra = (recon_f["status"] == "Ekstra - Laporan daerah tanpa pusat").sum()
-    sync_rate = (n_sinkron / total_keys * 100) if total_keys else 0
-
-    st.subheader("Indikator Sinkronisasi Pusat–Daerah")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Total Key Rekonsiliasi", f"{total_keys:,}".replace(",", "."))
-    c2.metric("Sinkron", f"{n_sinkron}", delta=f"{sync_rate:.1f}%")
-    c3.metric("Mismatch", f"{n_mismatch}", delta_color="inverse")
-    c4.metric("Miss (Daerah)", f"{n_miss}", delta_color="inverse")
-    c5.metric("Ekstra (Daerah)", f"{n_extra}", delta_color="inverse")
-
-    # progress bar sinkronisasi
-    st.progress(min(sync_rate / 100, 1.0), text=f"Tingkat Sinkronisasi: {sync_rate:.1f}%")
-
-# ---------------------------------------------------------------- Tabs
-tabs = st.tabs(["🗺️ Peta", "📊 Analisis", "🔄 Sinkronisasi", "📈 Tren Waktu", "📋 Data & Kualitas", "⬇️ Export"])
+tabs = st.tabs(["🗺️ Peta", "📊 Analisis", "🔥 Hotspot", "📈 Tren", "📋 Data", "⬇️ Export"])
 
 # ---------------- Tab Peta
 with tabs[0]:
-    st.subheader("Peta Persebaran Karhutla")
-    colA, colB = st.columns([3, 1])
+    st.subheader("Peta Kejadian Bencana")
+    if pusat_f.empty:
+        st.warning("Tidak ada data.")
+    else:
+        fig = px.scatter_geo(
+            pusat_f, lat="lat", lon="lon",
+            color="tipe_bencana", size="luas_ha",
+            hover_name="kabupaten", hover_data={"provinsi": True, "tipe_bencana": True,
+                                              "luas_ha": True, "tanggal": True,
+                                              "korban_jiwa": True, "ispa_cases": True},
+            color_discrete_map=TIPE_COLOR, size_max=34,
+            projection="natural earth",
+        )
+        fig.update_geos(center=dict(lat=0.5, lon=110), projection_scale=5.2,
+                        showland=True, landcolor="#eaf2ff",
+                        showocean=True, oceancolor="#f0f7ff",
+                        showcountries=True, countrycolor="#94a3b8")
+        fig.update_layout(height=580, margin=dict(l=0, r=0, t=20, b=0),
+                          legend_title="Tipe Bencana")
+        st.plotly_chart(fig, use_container_width=True)
+
+    colA, colB = st.columns([1, 1])
     with colA:
-        df_map = pusat_f.copy()
-        if not df_map.empty and "lat" in df_map and "lon" in df_map:
-            size_col = "luas_ha" if "luas_ha" in df_map else None
-            color_col = "severity" if "severity" in df_map else None
-            fig = px.scatter_geo(
-                df_map, lat="lat", lon="lon",
-                size=size_col, color=color_col,
-                hover_name="kabupaten" if "kabupaten" in df_map else None,
-                hover_data={"provinsi": True, "luas_ha": True, "tanggal": True, "penyebab": True},
-                color_discrete_map=SEVERITY_COLOR,
-                size_max=40,
-                projection="natural earth",
-            )
-            # zoom ke Indonesia
-            fig.update_geos(center=dict(lat=-2, lon=118), projection_scale=4.5,
-                            showland=True, landcolor="#e8e8e8",
-                            showocean=True, oceancolor="#dbeafe",
-                            showcountries=True, countrycolor="#999")
-            fig.update_layout(height=560, margin=dict(l=0, r=0, t=20, b=0),
-                              legend_title="Severity")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("Data tidak memiliki kolom latitude/longitude.")
-    with colB:
-        st.markdown("**Rekap per Provinsi**")
         if "provinsi" in pusat_f:
-            g = pusat_f.groupby("provinsi").agg(kejadian=("id_laporan", "count"),
-                                               luas=("luas_ha", "sum")).reset_index()
-            g = g.sort_values("luas", ascending=False).head(12)
-            st.dataframe(g, use_container_width=True, hide_index=True)
+            g = pusat_f.groupby("provinsi").size().reset_index(name="kejadian").sort_values("kejadian", ascending=False).head(15)
+            fig = px.bar(g, x="kejadian", y="provinsi", orientation="h",
+                         title="Kejadian per Provinsi", color="kejadian",
+                         color_continuous_scale="Blues")
+            fig.update_layout(height=420, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+    with colB:
+        if "tipe_bencana" in pusat_f:
+            g = pusat_f.groupby("tipe_bencana").size().reset_index(name="kejadian")
+            fig = px.pie(g, values="kejadian", names="tipe_bencana", title="Komposisi Tipe Bencana",
+                         color="tipe_bencana", color_discrete_map=TIPE_COLOR, hole=0.45)
+            fig.update_layout(height=420)
+            st.plotly_chart(fig, use_container_width=True)
 
 # ---------------- Tab Analisis
 with tabs[1]:
-    st.subheader("Analisis Karhutla")
-    r1c1, r1c2 = st.columns(2)
-    with r1c1:
-        if "provinsi" in pusat_f:
-            g = pusat_f.groupby("provinsi").size().reset_index(name="kejadian").sort_values("kejadian", ascending=True)
-            fig = px.bar(g, x="kejadian", y="provinsi", orientation="h",
-                         title="Jumlah Kejadian per Provinsi", color="kejadian",
-                         color_continuous_scale="Reds")
-            fig.update_layout(height=420, showlegend=False)
+    st.subheader("Analisis: Kejadian, Luas Terdampak, Korban, Dampak (ISPA)")
+    r1, r2 = st.columns(2)
+    with r1:
+        if "tipe_bencana" in pusat_f:
+            g = pusat_f.groupby("tipe_bencana").agg(kejadian=("id_kejadian", "count"),
+                                                   luas=("luas_ha", "sum")).reset_index()
+            fig = px.bar(g, x="tipe_bencana", y=["kejadian", "luas"], barmode="group",
+                         title="Jumlah Kejadian & Luas Terdampak per Tipe")
+            fig.update_layout(height=380)
             st.plotly_chart(fig, use_container_width=True)
-    with r1c2:
-        if "penyebab" in pusat_f:
-            g = pusat_f.groupby("penyebab").size().reset_index(name="kejadian")
-            fig = px.pie(g, values="kejadian", names="penyebab", title="Penyebab Karhutla",
-                         hole=0.45, color_discrete_sequence=px.colors.sequential.Reds_r)
-            fig.update_layout(height=420)
-            st.plotly_chart(fig, use_container_width=True)
-    r2c1, r2c2 = st.columns(2)
-    with r2c1:
+    with r2:
         if "severity" in pusat_f:
             g = pusat_f.groupby("severity").size().reset_index(name="kejadian")
             fig = px.bar(g, x="severity", y="kejadian", title="Distribusi Severity",
                          color="severity", color_discrete_map=SEVERITY_COLOR)
-            fig.update_layout(height=360, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
-    with r2c2:
-        if "luas_ha" in pusat_f:
-            fig = px.histogram(pusat_f, x="luas_ha", nbins=40, title="Distribusi Luas Lahan (ha)",
-                               color_discrete_sequence=["#dd6b20"])
-            fig.update_layout(height=360)
+            fig.update_layout(height=380, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- Tab Sinkronisasi
-with tabs[2]:
-    st.subheader("Rekonsiliasi & Sinkronisasi Pusat–Daerah")
-    if recon_f is None:
-        st.warning("Sinkronisasi memerlukan data Pusat dan Daerah. Pilih mode upload keduanya atau data sintetis.")
-    else:
-        # status distribution
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            g = recon_f["status"].value_counts().reset_index()
-            g.columns = ["status", "jumlah"]
-            fig = px.pie(g, values="jumlah", names="status", title="Status Rekonsiliasi",
-                         color="status", color_discrete_map=STATUS_COLOR, hole=0.4)
+    r3, r4 = st.columns(2)
+    with r3:
+        # Korban per tipe
+        if "tipe_bencana" in pusat_f:
+            g = pusat_f.groupby("tipe_bencana").agg(korban_jiwa=("korban_jiwa", "sum"),
+                                                   korban_luka=("korban_luka", "sum")).reset_index()
+            fig = px.bar(g, x="tipe_bencana", y=["korban_jiwa", "korban_luka"], barmode="group",
+                         title="Korban (Jiwa & Luka) per Tipe Bencana",
+                         color_discrete_sequence=["#dc2626", "#f97316"])
             fig.update_layout(height=380)
             st.plotly_chart(fig, use_container_width=True)
-        with c2:
-            # mismatch per provinsi stacked
-            g2 = recon_f.groupby(["provinsi", "status"]).size().reset_index(name="jumlah")
-            fig = px.bar(g2, x="provinsi", y="jumlah", color="status",
-                         color_discrete_map=STATUS_COLOR,
-                         title="Status Rekonsiliasi per Provinsi",
-                         barmode="stack")
-            fig.update_layout(height=380, xaxis_tickangle=-45)
+    with r4:
+        # ISPA per tipe (terutama karhutla)
+        if "tipe_bencana" in pusat_f:
+            g = pusat_f.groupby("tipe_bencana")["ispa_cases"].sum().reset_index()
+            fig = px.bar(g, x="tipe_bencana", y="ispa_cases", title="Kasus ISPA per Tipe Bencana",
+                         color="tipe_bencana", color_discrete_map=TIPE_COLOR)
+            fig.update_layout(height=380, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
-        st.markdown("#### Daftar Miss Data (Daerah tidak melapor)")
-        miss_df = recon_f[recon_f["status"] == "MISS - Daerah tidak melapor"]
-        if miss_df.empty:
-            st.success("Tidak ada miss data pada filter ini. 🎉")
-        else:
-            show_cols = ["tanggal", "provinsi", "kabupaten", "luas_pusat", "penyebab_pusat", "severity_pusat"]
-            st.dataframe(miss_df[show_cols].sort_values("tanggal"), use_container_width=True, hide_index=True)
-            st.caption(f"Total miss: {len(miss_df)} kejadian.")
+    st.markdown("#### Rekap per Provinsi")
+    if "provinsi" in pusat_f:
+        g = pusat_f.groupby("provinsi").agg(
+            kejadian=("id_kejadian", "count"),
+            luas_ha=("luas_ha", "sum"),
+            korban_jiwa=("korban_jiwa", "sum"),
+            korban_luka=("korban_luka", "sum"),
+            ispa_cases=("ispa_cases", "sum"),
+        ).reset_index().sort_values("kejadian", ascending=False)
+        st.dataframe(g, use_container_width=True, hide_index=True)
 
-        st.markdown("#### Daftar Mismatch (angka berbeda)")
-        mm_df = recon_f[recon_f["status"] == "Mismatch (angka beda)"]
-        if mm_df.empty:
-            st.success("Tidak ada mismatch angka.")
-        else:
-            show_cols = ["tanggal", "provinsi", "kabupaten", "luas_pusat", "luas_daerah", "selisih_ha",
-                         "penyebab_pusat", "penyebab_daerah"]
-            st.dataframe(mm_df[show_cols].sort_values("selisih_ha", key=lambda s: s.abs(), ascending=False),
-                         use_container_width=True, hide_index=True)
+# ---------------- Tab Hotspot
+with tabs[2]:
+    st.subheader("🔥 Sebaran Hotspot")
+    if hotspot_f is None or hotspot_f.empty:
+        st.warning("Data hotspot tidak tersedia. (Upload file hotspot di sidebar atau gunakan mode Sintetis.)")
+    else:
+        # pilih tanggal
+        dates = sorted(hotspot_f["tanggal"].dt.date.unique().tolist(), reverse=True)
+        pick = st.selectbox("Tanggal Hotspot", dates, index=0)
+        hdf = hotspot_f[hotspot_f["tanggal"].dt.date == pick]
+        h1, h2 = st.columns([3, 1])
+        with h1:
+            fig = px.scatter_geo(
+                hdf, lat="lat", lon="lon", color="confidence",
+                size="frp" if "frp" in hdf else None, hover_name="kabupaten",
+                hover_data={"provinsi": True, "satelit": True, "frp": True, "confidence": True},
+                projection="natural earth",
+                color_discrete_map={"Low": "#93c5fd", "Nominal": "#2563eb", "High": "#1e3a8a"},
+            )
+            fig.update_geos(center=dict(lat=0.5, lon=110), projection_scale=5.2,
+                            showland=True, landcolor="#eaf2ff", showocean=True, oceancolor="#f0f7ff",
+                            showcountries=True, countrycolor="#94a3b8")
+            fig.update_layout(height=520, margin=dict(l=0, r=0, t=20, b=0),
+                              title=f"Hotspot {pick} (n={len(hdf)})")
+            st.plotly_chart(fig, use_container_width=True)
+        with h2:
+            st.metric("Hotspot tgl ini", fmt_num(len(hdf)))
+            if "provinsi" in hdf:
+                g = hdf.groupby("provinsi").size().reset_index(name="hotspot").sort_values("hotspot", ascending=False)
+                st.dataframe(g, use_container_width=True, hide_index=True)
+            if "confidence" in hdf:
+                cg = hdf["confidence"].value_counts().reset_index()
+                cg.columns = ["confidence", "jumlah"]
+                fig2 = px.pie(cg, values="jumlah", names="confidence", title="Confidence Hotspot",
+                              color_discrete_sequence=["#93c5fd", "#2563eb", "#1e3a8a"], hole=0.4)
+                fig2.update_layout(height=260)
+                st.plotly_chart(fig2, use_container_width=True)
 
-        st.markdown("#### Laporan Ekstra Daerah (tanpa data pusat)")
-        ex_df = recon_f[recon_f["status"] == "Ekstra - Laporan daerah tanpa pusat"]
-        if not ex_df.empty:
-            show_cols = ["tanggal", "provinsi", "kabupaten", "luas_daerah", "penyebab_daerah"]
-            st.dataframe(ex_df[show_cols].sort_values("tanggal"), use_container_width=True, hide_index=True)
+        # tren hotspot harian
+        st.markdown("#### Tren Hotspot Harian")
+        if hotspot_f is not None:
+            ts = hotspot_f.copy()
+            ts["tgl"] = ts["tanggal"].dt.date
+            g = ts.groupby("tgl").size().reset_index(name="hotspot")
+            fig = px.area(g, x="tgl", y="hotspot", title="Jumlah Hotspot per Hari",
+                          color_discrete_sequence=["#2563eb"])
+            fig.update_layout(height=340)
+            st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- Tab Tren Waktu
+# ---------------- Tab Tren
 with tabs[3]:
-    st.subheader("Tren Waktu Karhutla")
+    st.subheader("Tren Waktu")
     if "tanggal" in pusat_f and pusat_f["tanggal"].notna().any():
         ts = pusat_f.copy()
         ts["bulan"] = ts["tanggal"].dt.to_period("M").astype(str)
-        g = ts.groupby("bulan").agg(kejadian=("id_laporan", "count"), luas=("luas_ha", "sum")).reset_index()
-        g = g.sort_values("bulan")
-        fig = px.line(g, x="bulan", y=["kejadian", "luas"], title="Tren Kejadian & Luas per Bulan",
+        g = ts.groupby("bulan").agg(kejadian=("id_kejadian", "count"),
+                                    luas=("luas_ha", "sum"),
+                                    korban=("korban_jiwa", "sum"),
+                                    ispa=("ispa_cases", "sum")).reset_index().sort_values("bulan")
+        fig = px.line(g, x="bulan", y=["kejadian", "luas", "korban", "ispa"], title="Tren Bulanan",
                       markers=True)
-        fig.update_layout(height=420, xaxis_tickangle=-45)
+        fig.update_layout(height=440, xaxis_tickangle=-45)
         st.plotly_chart(fig, use_container_width=True)
 
-        # mingguan
         ts2 = pusat_f.copy()
         ts2["minggu"] = ts2["tanggal"].dt.to_period("W").astype(str)
         g2 = ts2.groupby("minggu").size().reset_index(name="kejadian").sort_values("minggu")
-        fig2 = px.area(g2, x="minggu", y="kejadian", title="Tren Kejadian Mingguan", color_discrete_sequence=["#e53e3e"])
-        fig2.update_layout(height=360, xaxis_tickangle=-60)
+        fig2 = px.area(g2, x="minggu", y="kejadian", title="Tren Kejadian Mingguan", color_discrete_sequence=["#1e3a8a"])
+        fig2.update_layout(height=340, xaxis_tickangle=-60)
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.warning("Kolom tanggal tidak tersedia.")
 
-# ---------------- Tab Data & Kualitas
+# ---------------- Tab Data
 with tabs[4]:
     st.subheader("Data & Kualitas Data")
-    st.markdown("**Pusat**")
-    st.dataframe(pusat_f, use_container_width=True, height=260)
-    if daerah_df is not None:
-        st.markdown("**Daerah (filter)**")
-        st.dataframe(daerah_f, use_container_width=True, height=260)
+    st.markdown("**Data Pusat (filter)**")
+    st.dataframe(pusat_f, use_container_width=True, height=280)
+    if hotspot_f is not None:
+        st.markdown("**Data Hotspot (filter)**")
+        st.dataframe(hotspot_f, use_container_width=True, height=220)
 
     st.markdown("#### Profil Kualitas Data")
     q_rows = []
-    for name, df_ in [("Pusat", pusat_f), ("Daerah", daerah_f if daerah_f is not None else pd.DataFrame())]:
+    for name, df_ in [("Pusat", pusat_f), ("Hotspot", hotspot_f if hotspot_f is not None else pd.DataFrame())]:
         if df_.empty:
             continue
         q_rows.append({
             "Sumber": name,
             "Jumlah Record": len(df_),
             "Kolom": len(df_.columns),
-            "Missing Values (seluruh sel)": int(df_.isna().sum().sum()),
+            "Missing Values": int(df_.isna().sum().sum()),
             "% Missing": round(df_.isna().sum().sum() / max(df_.size, 1) * 100, 2),
-            "Duplikat (key)": int(df_.duplicated(subset=["provinsi", "kabupaten", "tanggal"]).sum()) if "provinsi" in df_ else 0,
             "Tanpa Koordinat": int(df_[["lat", "lon"]].isna().any(axis=1).sum()) if all(c in df_ for c in ["lat", "lon"]) else 0,
         })
     st.dataframe(pd.DataFrame(q_rows), use_container_width=True, hide_index=True)
 
-    # top wilayah miss
-    if recon_f is not None:
-        st.markdown("#### Top Provinsi dengan Miss Data Terbanyak")
-        mg = recon_f[recon_f["status"] == "MISS - Daerah tidak melapor"].groupby("provinsi").size().reset_index(name="miss")
-        if not mg.empty:
-            mg = mg.sort_values("miss", ascending=False).head(10)
-            fig = px.bar(mg, x="provinsi", y="miss", title="Miss Data per Provinsi", color="miss",
-                         color_continuous_scale="Reds")
-            fig.update_layout(height=360, xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
-
 # ---------------- Tab Export
 with tabs[5]:
-    st.subheader("Export Laporan Rekonsiliasi")
-    if recon_f is None:
-        st.info("Memerlukan data rekonsiliasi.")
-    else:
-        # pilihan format
-        export_df = recon_f.copy()
-        csv_bytes = export_df.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Download Rekonsiliasi (CSV)", csv_bytes,
-                           file_name="rekonsiliasi_karhutla.csv", mime="text/csv")
-        # excel
-        buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine="openpyxl") as w:
-            export_df.to_excel(w, index=False, sheet_name="Rekonsiliasi")
-            pusat_f.to_excel(w, index=False, sheet_name="Pusat")
-            if daerah_f is not None:
-                daerah_f.to_excel(w, index=False, sheet_name="Daerah")
-            # summary per provinsi
-            if "provinsi" in pusat_f:
-                summ = pusat_f.groupby("provinsi").agg(
-                    kejadian=("id_laporan", "count"), luas_ha=("luas_ha", "sum")).reset_index()
-                summ.to_excel(w, index=False, sheet_name="Rekap Provinsi")
-        st.download_button("⬇️ Download Laporan Lengkap (Excel)", buf.getvalue(),
-                           file_name="laporan_karhutla.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        st.success("File siap diunduh. Gunakan untuk laporan aktualisasi / lampiran.")
+    st.subheader("Export Laporan")
+    template_cols = ["id_kejadian", "tanggal", "provinsi", "kabupaten", "lat", "lon",
+                     "tipe_bencana", "luas_ha", "korban_jiwa", "korban_luka", "pengungsi",
+                     "ispa_cases", "penyebab", "severity", "status_verifikasi", "sumber"]
+    hotspot_cols = ["id_hotspot", "tanggal", "provinsi", "kabupaten", "lat", "lon",
+                    "confidence", "satelit", "frp", "sumber"]
+    tmpl = pd.DataFrame(columns=template_cols)
+    htmpl = pd.DataFrame(columns=hotspot_cols)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button("⬇️ Template Bencana (CSV)", tmpl.to_csv(index=False).encode("utf-8"),
+                           file_name="template_bencana.csv", mime="text/csv")
+    with c2:
+        st.download_button("⬇️ Template Hotspot (CSV)", htmpl.to_csv(index=False).encode("utf-8"),
+                           file_name="template_hotspot.csv", mime="text/csv")
+
+    # export data saat ini
+    csv_bytes = pusat_f.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Download Data Bencana (CSV)", csv_bytes,
+                       file_name="data_bencana.csv", mime="text/csv")
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        pusat_f.to_excel(w, index=False, sheet_name="Bencana")
+        if hotspot_f is not None:
+            hotspot_f.to_excel(w, index=False, sheet_name="Hotspot")
+        if "provinsi" in pusat_f:
+            summ = pusat_f.groupby("provinsi").agg(
+                kejadian=("id_kejadian", "count"), luas_ha=("luas_ha", "sum"),
+                korban_jiwa=("korban_jiwa", "sum"), korban_luka=("korban_luka", "sum"),
+                ispa_cases=("ispa_cases", "sum")).reset_index()
+            summ.to_excel(w, index=False, sheet_name="Rekap Provinsi")
+        if "tipe_bencana" in pusat_f:
+            summ2 = pusat_f.groupby("tipe_bencana").agg(
+                kejadian=("id_kejadian", "count"), luas_ha=("luas_ha", "sum"),
+                korban_jiwa=("korban_jiwa", "sum"), korban_luka=("korban_luka", "sum"),
+                ispa_cases=("ispa_cases", "sum")).reset_index()
+            summ2.to_excel(w, index=False, sheet_name="Rekap Tipe")
+    st.download_button("⬇️ Download Laporan Lengkap (Excel)", buf.getvalue(),
+                       file_name="laporan_bencana.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.success("File siap diunduh untuk laporan/pimpinan.")
 
 st.divider()
-st.caption("Dashboard Karhutla — Deputi 2 BIN | Latsar Aktualisasi | Sumber data: sistim Pusat & Daerah (sintetis untuk demo)")
+st.caption("Dashboard Bencana Alam — Dir 2.3 Deputi 2 BIN | Latsar Aktualisasi | Wilayah Sumatera & Kalimantan")
