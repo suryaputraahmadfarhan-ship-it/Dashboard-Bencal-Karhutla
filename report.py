@@ -122,9 +122,18 @@ def _header(doc, ctx):
     r = p.add_run("Deputi 2 · Direktorat 2.3")
     r.font.size = Pt(11)
 
+    jenis = ctx.get("jenis", "Semua")
+    judul_map = {
+        "Semua": "LAPORAN GABUNGAN KEBENCANAAN",
+        "Karhutla": "LAPORAN KEBENCANAAN - KARHUTLA",
+        "Banjir": "LAPORAN KEBENCANAAN - BANJIR",
+        "Gempa": "LAPORAN KEBENCANAAN - GEMPA",
+        "Bencana Alam Lainnya": "LAPORAN KEBENCANAAN - BENCANA ALAM LAINNYA",
+    }
+    judul = judul_map.get(jenis, f"LAPORAN KEBENCANAAN - {jenis.upper()}")
     h = doc.add_paragraph()
     h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = h.add_run("LAPORAN KONDISI KEBENCANAAN")
+    r = h.add_run(judul)
     r.bold = True
     r.font.size = Pt(16)
     r.font.color.rgb = NAVY
@@ -279,12 +288,20 @@ def _penjelasan_per_jenis(doc, ctx):
 
 
 def _hotspot(doc, ctx):
-    th = ctx.get("top_hotspot")
-    if th is None or len(th) == 0:
+    """Rekap hotspot untuk SEMUA 15 provinsi (bukan hanya top-5)."""
+    hs_full = ctx.get("hotspot_full")
+    if hs_full is None or len(hs_full) == 0:
+        th = ctx.get("top_hotspot")
+        if th is None or len(th) == 0:
+            return
+        doc.add_heading(f"Hotspot Tertinggi ({ctx.get('hotspot_tgl', '')})", level=2)
+        _table(doc, ["No", "Provinsi", "Jumlah hotspot"],
+               [[i + 1, r.provinsi, fmt_num(r.hotspot)] for i, r in enumerate(th.itertuples())],
+               widths=[1.5, 8, 4], num_cols=(2,))
         return
-    doc.add_heading(f"Hotspot Tertinggi ({ctx.get('hotspot_tgl', '')})", level=2)
+    doc.add_heading(f"Rekap Hotspot per Provinsi ({ctx.get('hotspot_tgl', '')})", level=2)
     _table(doc, ["No", "Provinsi", "Jumlah hotspot"],
-           [[i + 1, r.provinsi, fmt_num(r.hotspot)] for i, r in enumerate(th.itertuples())],
+           [[i + 1, r.provinsi, fmt_num(r.hotspot)] for i, r in enumerate(hs_full.itertuples())],
            widths=[1.5, 8, 4], num_cols=(2,))
 
 

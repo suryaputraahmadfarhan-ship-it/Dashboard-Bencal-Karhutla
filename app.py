@@ -354,6 +354,69 @@ def pakai_ispa():
 
 
 # ====================================================================== analisis otomatis (narasi)
+def _ringkasan_untuk(cur_df, prev_df, jenis_lap, hs_today_df, hs_prevday_df, hs_end_ts, wil_label_):
+    """Versi reusable dari ringkasan() — dipakai juga untuk laporan per-jenis."""
+    if cur_df is None or cur_df.empty:
+        return ("Tidak ada kejadian tercatat pada periode dan filter yang dipilih.", [])
+    n = len(cur_df)
+    prev_n = len(prev_df) if prev_df is not None else None
+    d = delta_pct(n, prev_n)
+    if d is None:
+        tren = "belum dapat dibandingkan dengan periode sebelumnya"
+    elif d > 2:
+        tren = f"tren meningkat ({fmt_num(abs(d), 1)}%) dibandingkan periode sebelumnya"
+    elif d < -2:
+        tren = f"tren menurun ({fmt_num(abs(d), 1)}%) dibandingkan periode sebelumnya"
+    else:
+        tren = "kondisi relatif stabil dibandingkan periode sebelumnya"
+    dom = cur_df["tipe_bencana"].value_counts()
+    teks = (f"Secara umum, kejadian bencana di wilayah {wil_label_} menunjukkan {tren}. "
+            f"Jenis bencana terbanyak adalah {dom.index[0]} ({fmt_num(dom.iloc[0])} dari {fmt_num(n)} kejadian).")
+    top5 = cur_df.groupby("provinsi").size().sort_values(ascending=False).head(5)
+    if len(top5):
+        teks += (" Lima provinsi dengan kejadian terbanyak: "
+                 + gabung_id([f"{p} ({fmt_num(v)})" for p, v in top5.items()]) + ".")
+    perh = []
+    use_hotspot = jenis_lap in ("Semua", "Karhutla")
+    use_ispa = jenis_lap in ("Semua", "Karhutla")
+    if use_hotspot and hs_today_df is not None and not hs_today_df.empty:
+        top3 = top_hotspot_df(hs_today_df, 3)
+        teks += (f" Sebaran hotspot pada {tgl_id(hs_end_ts)} paling terkonsentrasi di "
+                 f"{gabung_id(top3['provinsi'])}.")
+        a_ = hs_today_df.groupby("provinsi").size()
+        b_ = hs_prevday_df.groupby("provinsi").size() if hs_prevday_df is not None else pd.Series(dtype=int)
+        naik = (a_ - b_.reindex(a_.index).fillna(0)).sort_values(ascending=False)
+        naik = naik[naik > 0].head(2)
+        if len(naik):
+            perh.append("Peningkatan hotspot dibandingkan hari sebelumnya di "
+                        + gabung_id([f"{p} (+{int(v)})" for p, v in naik.items()]) + ".")
+    if use_ispa and "ispa" in cur_df.columns:
+        ispa = cur_df.groupby("provinsi")["ispa"].sum().sort_values(ascending=False)
+        if ispa.sum() > 0:
+            perh.append(f"Dampak kesehatan (ISPA) tercatat {fmt_num(ispa.sum())} kasus, terbanyak di "
+                        f"{ispa.index[0]} ({fmt_num(ispa.iloc[0])} kasus); perlu diantisipasi.")
+    if jenis_lap in ("Semua", "Banjir", "Gempa", "Bencana Alam Lainnya") and "rumah_terdampak" in cur_df.columns:
+        rt = cur_df.groupby("provinsi")["rumah_terdampak"].sum(min_count=1).dropna().sort_values(ascending=False)
+        if rt.sum() > 0:
+            perh.append(f"Rumah terdampak tercatat {fmt_num(rt.sum())} unit, terbanyak di "
+                        f"{rt.index[0]} ({fmt_num(rt.iloc[0])} unit).")
+    if jenis_lap == "Banjir" and "tinggi_genangan_cm" in cur_df.columns:
+        tg = pd.to_numeric(cur_df["tinggi_genangan_cm"], errors="coerce").dropna()
+        if len(tg):
+            perh.append(f"Tinggi genangan rata-rata {fmt_num(tg.mean(), 0)} cm "
+                        f"(maksimum {fmt_num(tg.max(), 0)} cm).")
+    if jenis_lap == "Gempa" and "magnitudo" in cur_df.columns:
+        mg = pd.to_numeric(cur_df["magnitudo"], errors="coerce").dropna()
+        if len(mg):
+            perh.append(f"Magnitudo rata-rata {fmt_num(mg.mean(), 1)} SR "
+                        f"(maksimum {fmt_num(mg.max(), 1)} SR).")
+    kj = cur_df.groupby("provinsi")["korban_jiwa"].sum().sort_values(ascending=False)
+    if kj.sum() > 0:
+        perh.append(f"Korban jiwa tercatat {fmt_num(kj.sum())} orang, terbanyak di {kj.index[0]} "
+                    f"({fmt_num(kj.iloc[0])} orang).")
+    return teks, perh[:4]
+
+
 def ringkasan():
     if cur is None or cur.empty:
         return ("Tidak ada kejadian tercatat pada periode dan filter yang dipilih.", [])
@@ -854,70 +917,196 @@ elif page == "Rekap Wilayah":
 
 # ====================================================================== LAPORAN
 elif page == "Laporan":
-    per_tipe, per_prov = agg_tipe(cur), agg_prov(cur)
-
-    # per_prov_full: 15 provinsi (atau sesuai wilayah) — di-reindex supaya provinsi tanpa data tetap muncul
-    daftar_prov = prov_list or list(PROVINSI)
-    per_prov_full = (per_prov.set_index("provinsi")
-                     .reindex(daftar_prov).fillna(0).reset_index()
-                     .sort_values("kejadian", ascending=False).reset_index(drop=True))
-    for c in ["kejadian", "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]:
-        if c in per_prov_full.columns:
-            per_prov_full[c] = per_prov_full[c].astype(int)
-
-    # prov_per_jenis: dict jenis -> top-3 provinsi untuk jenis itu (untuk paragraf per-jenis di laporan)
-    prov_per_jenis = {}
-    for tp, g in cur.groupby("tipe_bencana"):
-        top3 = (g.groupby("provinsi").size().reset_index(name="kejadian")
-                .sort_values("kejadian", ascending=False).head(3))
-        prov_per_jenis[tp] = top3
-
-    kpi_rows = []
-    for label, v, pv, dg, unit, _ic, _cls in KPIS:
-        dlt = delta_pct(v, pv)
-        kpi_rows.append([label, f"{fmt_num(v, dg)} {unit}".strip(),
-                         "-" if dlt is None else (f"{'naik' if dlt > 0 else 'turun'} {fmt_num(abs(dlt), 1)}%"
-                                                   if abs(dlt) >= 0.05 else "tetap")])
-    top_h = (top_hotspot_df(hs_today) if (pakai_hotspot() and hs_today is not None and not hs_today.empty)
-             else None)
-    ctx = {"periode": periode, "wilayah": wil_label, "jenis": tipe, "data_per": tgl_id(end_date, True),
-           "kpi": kpi_rows, "narasi": narasi, "perhatian": perhatian, "per_tipe": per_tipe, "per_prov": per_prov,
-           "per_prov_full": per_prov_full, "prov_per_jenis": prov_per_jenis,
-           "spesifik": metrik_spesifik(cur),
-           "top_hotspot": top_h, "hotspot_tgl": tgl_id(hs_end) if hs_end is not None else "",
-           "pembuat": f"{user['name']} ({user['role']})", "demo": is_demo}
     kpi_row()
     st.write("")
+
+    # Data basis "wilayah+periode saja" (tanpa filter tipe), supaya tiap tombol per-jenis
+    # bisa ambil subset tipe sendiri.
+    inc_wilayah = inc_all[inc_all["provinsi"].isin(prov_list)] if prov_list else inc_all
+    cur_all, prev_all = split_periode(inc_wilayah, end_date, days)
+    daftar_prov = prov_list or list(PROVINSI)
+    jenis_available = [t for t in ["Karhutla", "Banjir", "Gempa", "Bencana Alam Lainnya"]
+                       if t in set(cur_all["tipe_bencana"])] if not cur_all.empty else []
+
+    def _build_ctx(jenis_laporan):
+        """Bangun ctx laporan untuk satu jenis (atau 'Semua'='Gabungan')."""
+        if jenis_laporan == "Semua":
+            cur_j, prev_j = cur_all, prev_all
+        else:
+            cur_j = cur_all[cur_all["tipe_bencana"] == jenis_laporan]
+            prev_j = prev_all[prev_all["tipe_bencana"] == jenis_laporan] if prev_all is not None else None
+
+        per_tipe_j = agg_tipe(cur_j)
+        per_prov_j = agg_prov(cur_j)
+        per_prov_full_j = (per_prov_j.set_index("provinsi")
+                           .reindex(daftar_prov).fillna(0).reset_index()
+                           .sort_values("kejadian", ascending=False).reset_index(drop=True))
+        for c in ["kejadian", "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]:
+            if c in per_prov_full_j.columns:
+                per_prov_full_j[c] = per_prov_full_j[c].astype(int)
+
+        prov_per_jenis_j = {}
+        for tp, g in cur_j.groupby("tipe_bencana"):
+            top_g = (g.groupby("provinsi").size().reset_index(name="kejadian")
+                     .sort_values("kejadian", ascending=False).head(3))
+            prov_per_jenis_j[tp] = top_g
+
+        # KPI versi laporan — pakai aturan dinamis seperti kpi_values() tetapi untuk cur_j
+        def tot(df, col):
+            if df is None or df.empty or col not in df.columns:
+                return 0.0
+            return float(pd.to_numeric(df[col], errors="coerce").sum(skipna=True))
+
+        def mx(df, col):
+            if df is None or df.empty or col not in df.columns:
+                return 0.0
+            s = pd.to_numeric(df[col], errors="coerce").dropna()
+            return float(s.max()) if len(s) else 0.0
+
+        if jenis_laporan == "Banjir":
+            kpis_j = [("Jumlah Kejadian", len(cur_j), len(prev_j) if prev_j is not None else None, 0, ""),
+                      ("Rumah Terdampak", tot(cur_j, "rumah_terdampak"),
+                       tot(prev_j, "rumah_terdampak") if prev_j is not None else None, 0, "unit"),
+                      ("Tinggi Genangan Maks", mx(cur_j, "tinggi_genangan_cm"),
+                       mx(prev_j, "tinggi_genangan_cm") if prev_j is not None else None, 0, "cm"),
+                      ("Korban Jiwa", tot(cur_j, "korban_jiwa"),
+                       tot(prev_j, "korban_jiwa") if prev_j is not None else None, 0, "jiwa")]
+        elif jenis_laporan == "Gempa":
+            kpis_j = [("Jumlah Kejadian", len(cur_j), len(prev_j) if prev_j is not None else None, 0, ""),
+                      ("Magnitudo Maks", mx(cur_j, "magnitudo"),
+                       mx(prev_j, "magnitudo") if prev_j is not None else None, 1, "SR"),
+                      ("Rumah Terdampak", tot(cur_j, "rumah_terdampak"),
+                       tot(prev_j, "rumah_terdampak") if prev_j is not None else None, 0, "unit"),
+                      ("Korban Jiwa", tot(cur_j, "korban_jiwa"),
+                       tot(prev_j, "korban_jiwa") if prev_j is not None else None, 0, "jiwa")]
+        elif jenis_laporan == "Bencana Alam Lainnya":
+            kpis_j = [("Jumlah Kejadian", len(cur_j), len(prev_j) if prev_j is not None else None, 0, ""),
+                      ("Rumah Terdampak", tot(cur_j, "rumah_terdampak"),
+                       tot(prev_j, "rumah_terdampak") if prev_j is not None else None, 0, "unit"),
+                      ("Pengungsi", tot(cur_j, "pengungsi"),
+                       tot(prev_j, "pengungsi") if prev_j is not None else None, 0, "orang"),
+                      ("Korban Jiwa", tot(cur_j, "korban_jiwa"),
+                       tot(prev_j, "korban_jiwa") if prev_j is not None else None, 0, "jiwa")]
+        else:  # Semua & Karhutla
+            kpis_j = [("Jumlah Kejadian", len(cur_j), len(prev_j) if prev_j is not None else None, 0, ""),
+                      ("Luas Terdampak", tot(cur_j, "luas_ha"),
+                       tot(prev_j, "luas_ha") if prev_j is not None else None, 1, "ha"),
+                      ("Korban Jiwa", tot(cur_j, "korban_jiwa"),
+                       tot(prev_j, "korban_jiwa") if prev_j is not None else None, 0, "jiwa"),
+                      ("Dampak (ISPA)", tot(cur_j, "ispa"),
+                       tot(prev_j, "ispa") if prev_j is not None else None, 0, "kasus")]
+        kpi_rows_j = []
+        for label, v, pv, dg, unit in kpis_j:
+            dlt = delta_pct(v, pv)
+            kpi_rows_j.append([label, f"{fmt_num(v, dg)} {unit}".strip(),
+                               "-" if dlt is None else (f"{'naik' if dlt > 0 else 'turun'} {fmt_num(abs(dlt), 1)}%"
+                                                        if abs(dlt) >= 0.05 else "tetap")])
+
+        # Narasi + perhatian per-jenis
+        narasi_j, perhatian_j = _ringkasan_untuk(cur_j, prev_j, jenis_laporan,
+                                                 hs_today if jenis_laporan in ("Semua", "Karhutla") else None,
+                                                 hs_prevday if jenis_laporan in ("Semua", "Karhutla") else None,
+                                                 hs_end if jenis_laporan in ("Semua", "Karhutla") else None,
+                                                 wil_label)
+
+        # Hotspot full (semua 15 provinsi) untuk Semua/Karhutla
+        hotspot_full_j = None
+        top_h_j = None
+        if jenis_laporan in ("Semua", "Karhutla") and hs_today is not None and not hs_today.empty:
+            hotspot_full_j = (hs_today.groupby("provinsi").size().reset_index(name="hotspot")
+                              .set_index("provinsi").reindex(daftar_prov).fillna(0).astype({"hotspot": int})
+                              .reset_index().sort_values("hotspot", ascending=False).reset_index(drop=True))
+            top_h_j = top_hotspot_df(hs_today)
+
+        return {"periode": periode, "wilayah": wil_label, "jenis": jenis_laporan,
+                "data_per": tgl_id(end_date, True), "kpi": kpi_rows_j,
+                "narasi": narasi_j, "perhatian": perhatian_j,
+                "per_tipe": per_tipe_j, "per_prov": per_prov_j,
+                "per_prov_full": per_prov_full_j, "prov_per_jenis": prov_per_jenis_j,
+                "spesifik": metrik_spesifik(cur_j),
+                "top_hotspot": top_h_j, "hotspot_full": hotspot_full_j,
+                "hotspot_tgl": tgl_id(hs_end) if hs_end is not None else "",
+                "pembuat": f"{user['name']} ({user['role']})", "demo": is_demo}
 
     tab_laporan, tab_buat = st.tabs(["📄 Unduh Laporan", "✍️ Buat Laporan dari Teks"])
 
     with tab_laporan:
         with st.container(border=True):
-            theme.panel_title("📄 Laporan untuk Pimpinan", f"({periode.lower()} · {wil_label} · {tipe})")
+            theme.panel_title("📄 Laporan untuk Pimpinan", f"({periode.lower()} · {wil_label})")
             st.markdown(f'<div class="note"><p>{narasi}</p></div>', unsafe_allow_html=True)
             if perhatian:
                 li = "".join(f"<li>{p}</li>" for p in perhatian)
                 st.markdown(f'<div class="attn"><div class="h">⚠️ Perhatian</div><ul>{li}</ul></div>',
                             unsafe_allow_html=True)
             stamp = today_wib().strftime("%Y%m%d")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.download_button("⬇️ Laporan Lengkap (Word .docx)", build_docx(ctx),
-                                   f"laporan_kebencanaan_{stamp}.docx",
+
+            st.markdown("##### Unduh Laporan Word (.docx) per Jenis Bencana")
+            st.caption("Masing-masing berisi 15 provinsi lengkap. Pilih yang relevan untuk pimpinan.")
+
+            # Baris 1: Gabungan (primary) + Karhutla
+            r1 = st.columns(2)
+            with r1[0]:
+                st.download_button("📘 Laporan Gabungan (semua jenis)",
+                                   build_docx(_build_ctx("Semua")),
+                                   f"laporan_gabungan_{stamp}.docx",
                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                   type="primary")
-            sheets = {"Rekap Provinsi (15)": per_prov_full, "Rekap Jenis": per_tipe}
+                                   type="primary", use_container_width=True, key="dl_gab")
+            with r1[1]:
+                disabled = "Karhutla" not in jenis_available
+                st.download_button("🔥 Laporan Karhutla",
+                                   build_docx(_build_ctx("Karhutla")) if not disabled else b"",
+                                   f"laporan_karhutla_{stamp}.docx",
+                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                   use_container_width=True, disabled=disabled, key="dl_kar")
+
+            # Baris 2: Banjir + Gempa + Lainnya
+            r2 = st.columns(3)
+            with r2[0]:
+                disabled = "Banjir" not in jenis_available
+                st.download_button("🌊 Laporan Banjir",
+                                   build_docx(_build_ctx("Banjir")) if not disabled else b"",
+                                   f"laporan_banjir_{stamp}.docx",
+                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                   use_container_width=True, disabled=disabled, key="dl_ban")
+            with r2[1]:
+                disabled = "Gempa" not in jenis_available
+                st.download_button("🌋 Laporan Gempa",
+                                   build_docx(_build_ctx("Gempa")) if not disabled else b"",
+                                   f"laporan_gempa_{stamp}.docx",
+                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                   use_container_width=True, disabled=disabled, key="dl_gem")
+            with r2[2]:
+                disabled = "Bencana Alam Lainnya" not in jenis_available
+                st.download_button("🌪️ Laporan Bencana Lainnya",
+                                   build_docx(_build_ctx("Bencana Alam Lainnya")) if not disabled else b"",
+                                   f"laporan_bencana_lainnya_{stamp}.docx",
+                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                   use_container_width=True, disabled=disabled, key="dl_lain")
+
+            st.markdown("---")
+            st.markdown("##### Unduhan lain (Excel & Data mentah)")
+            per_tipe_all = agg_tipe(cur_all)
+            per_prov_all = agg_prov(cur_all)
+            per_prov_full_all = (per_prov_all.set_index("provinsi")
+                                 .reindex(daftar_prov).fillna(0).reset_index()
+                                 .sort_values("kejadian", ascending=False).reset_index(drop=True))
+            sheets = {"Rekap Provinsi (15)": per_prov_full_all, "Rekap Jenis": per_tipe_all}
             if is_admin():
-                sheets = {"Data Kejadian": bersihkan(cur), **sheets}
+                sheets = {"Data Kejadian": bersihkan(cur_all), **sheets}
                 if hs_period is not None:
                     sheets["Hotspot"] = bersihkan(hs_period.assign(tanggal=hs_period["tanggal"]))
+            c1, c2 = st.columns(2)
+            with c1:
+                st.download_button("📊 Rekap Lengkap (Excel .xlsx)", build_xlsx(sheets),
+                                   f"rekap_kebencanaan_{stamp}.xlsx",
+                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                   use_container_width=True)
             with c2:
-                st.download_button("⬇️ Rekap (Excel .xlsx)", build_xlsx(sheets), f"rekap_kebencanaan_{stamp}.xlsx",
-                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            with c3:
                 if is_admin():
-                    st.download_button("⬇️ Data mentah (CSV)", bersihkan(cur).to_csv(index=False).encode("utf-8"),
-                                       f"data_kejadian_{stamp}.csv", "text/csv")
+                    st.download_button("📁 Data mentah (CSV)",
+                                       bersihkan(cur_all).to_csv(index=False).encode("utf-8"),
+                                       f"data_kejadian_{stamp}.csv", "text/csv",
+                                       use_container_width=True)
                 else:
                     st.caption("Data mentah hanya dapat diunduh Admin.")
 
