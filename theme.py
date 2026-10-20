@@ -1,9 +1,25 @@
 # -*- coding: utf-8 -*-
 """Tema visual dashboard (mengikuti mockup): sidebar navy BIN, kartu KPI pastel, panel putih."""
+import base64
+import os
+
 import streamlit as st
 
-EMBLEM = ("https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/"
-          "Lambang_Badan_Intelijen_Negara.svg/120px-Lambang_Badan_Intelijen_Negara.svg.png")
+_FALLBACK_EMBLEM = ("https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/"
+                    "Lambang_Badan_Intelijen_Negara.svg/120px-Lambang_Badan_Intelijen_Negara.svg.png")
+
+
+def _embed_image(filename, mime):
+    """Embed gambar lokal sebagai data URI; aman saat offline / tanpa akses ke internet."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", filename)
+    try:
+        with open(path, "rb") as f:
+            return f"data:{mime};base64," + base64.b64encode(f.read()).decode("ascii")
+    except FileNotFoundError:
+        return None
+
+
+EMBLEM = _embed_image("bin_logo.png", "image/png") or _FALLBACK_EMBLEM
 
 TIPE_COLOR = {
     "Karhutla": "#f97316",
@@ -105,19 +121,24 @@ div[data-testid="stVerticalBlockBorderWrapper"]{
 .psub{ color:var(--muted); font-size:13px; margin-bottom:8px; }
 
 /* ------------------------------------------------ KPI */
-.kpi{ display:flex; gap:16px; align-items:center; padding:18px 20px; border-radius:16px;
-  border:1px solid; box-shadow: 0 4px 16px rgba(18,48,122,.05); height:100%; }
-.kpi-ic{ width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-  font-size:26px; flex:0 0 56px; }
-.kpi-lb{ font-weight:600; font-size:15px; color:#1c3d82; }
-.kpi-v{ font-weight:800; font-size:38px; line-height:1.1; color:var(--ink); letter-spacing:-1px; }
-.kpi-v small{ font-size:20px; font-weight:700; letter-spacing:0; margin-left:4px; }
-.kpi-d{ font-size:13px; color:var(--muted); margin-top:2px; }
+.kpi{ display:flex; gap:14px; align-items:center; padding:16px 18px; border-radius:16px;
+  border:1px solid; box-shadow: 0 4px 16px rgba(18,48,122,.05); height:100%; overflow:hidden; }
+.kpi > div:nth-child(2){ min-width:0; flex:1; }
+.kpi-ic{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:24px; flex:0 0 52px; }
+.kpi-lb{ font-weight:600; font-size:14px; color:#1c3d82; margin-bottom:2px; line-height:1.25; }
+.kpi-v{ font-weight:800; font-size:clamp(22px, 2.1vw, 32px); line-height:1.1; color:var(--ink);
+  letter-spacing:-.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.kpi-v small{ font-size:.55em; font-weight:700; letter-spacing:0; margin-left:4px; color:#1c3d82; }
+.kpi-d{ font-size:12px; color:var(--muted); margin-top:3px; line-height:1.35; }
 .kpi-d b.up{ color:#dc2626; } .kpi-d b.down{ color:#16a34a; } .kpi-d b.flat{ color:var(--muted); }
 .kpi-blue{ background:#eaf2ff; border-color:#cfe0fb; } .kpi-blue .kpi-ic{ background:#2563eb; }
 .kpi-teal{ background:#e6f7f4; border-color:#c4ece5; } .kpi-teal .kpi-ic{ background:#0d9488; }
 .kpi-orange{ background:#fff1e6; border-color:#fbd9bd; } .kpi-orange .kpi-ic{ background:#f97316; }
 .kpi-purple{ background:#f1ebff; border-color:#ddd0fa; } .kpi-purple .kpi-ic{ background:#8b5cf6; }
+.kpi-rose{ background:#ffecef; border-color:#fcccd4; } .kpi-rose .kpi-ic{ background:#e11d48; }
+.kpi-amber{ background:#fff6dd; border-color:#fde9a9; } .kpi-amber .kpi-ic{ background:#d97706; }
+.kpi-slate{ background:#eef2f8; border-color:#d4def0; } .kpi-slate .kpi-ic{ background:#475569; }
 
 /* ------------------------------------------------ tabel top 5 / legenda */
 .toptable{ width:100%; border-collapse:collapse; font-size:12.5px; table-layout:auto; }

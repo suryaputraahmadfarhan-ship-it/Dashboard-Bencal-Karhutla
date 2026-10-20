@@ -39,6 +39,22 @@ def fmt_num(x, digits=0):
     return f"{x:,.{digits}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def fmt_compact(x, digits=1):
+    """Format angka ringkas untuk KPI: 1.234 → '1,2 rb', 1.250.000 → '1,25 jt'. Nilai kecil pakai fmt_num."""
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return "-"
+    ax = abs(x)
+    if ax >= 1_000_000:
+        return fmt_num(x / 1_000_000, digits) + " jt"
+    if ax >= 10_000:
+        return fmt_num(x / 1_000, digits) + " rb"
+    if ax >= 1_000:
+        return fmt_num(x, 0)
+    if ax < 10 and (not float(x).is_integer()):
+        return fmt_num(x, digits)
+    return fmt_num(x, 0)
+
+
 def tgl_id(ts, panjang=False):
     ts = pd.Timestamp(ts)
     if panjang:
