@@ -20,6 +20,7 @@ def _embed_image(filename, mime):
 
 
 EMBLEM = _embed_image("bin_logo.png", "image/png") or _FALLBACK_EMBLEM
+DEPUTI2 = _embed_image("deputi2_logo.png", "image/png")
 
 TIPE_COLOR = {
     "Karhutla": "#f97316",
@@ -62,7 +63,7 @@ section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] span, section[data-testid="stSidebar"] div{ color:#eaf1ff; }
 .nav-brand{ display:flex; gap:12px; align-items:center; padding:6px 4px 14px 4px;
   border-bottom:1px solid rgba(255,255,255,.18); margin-bottom:14px; }
-.nav-brand img{ width:58px; height:58px; }
+.nav-brand img{ width:58px; height:58px; object-fit:contain; background:#fff; border-radius:10px; padding:4px; }
 .nav-brand .b1{ font-weight:800; font-size:13.5px; line-height:1.25; color:#fff; }
 .nav-brand .b2{ font-size:11.5px; letter-spacing:.6px; color:#b9cdf5; }
 .nav-dir{ padding:2px 4px 14px 4px; color:#fff; }
@@ -97,15 +98,19 @@ section[data-testid="stSidebar"] .stButton > button:hover{ background: rgba(255,
 .hero{ display:flex; align-items:center; justify-content:space-between; gap:22px; flex-wrap:wrap;
   padding:8px 4px 14px 4px; }
 .hero-l{ display:flex; align-items:center; gap:16px; }
-.hero-shield{ width:62px; height:62px; border-radius:16px; display:flex; align-items:center; justify-content:center;
-  font-size:30px; background: linear-gradient(135deg,#1d4ed8,#3b82f6); box-shadow:0 8px 20px rgba(29,78,216,.35); }
+.hero-shield{ width:72px; height:72px; border-radius:16px; display:flex; align-items:center; justify-content:center;
+  background:#fff; padding:4px; box-shadow:0 6px 18px rgba(18,48,122,.18); border:1px solid #e2e8f5; }
+.hero-shield img{ width:100%; height:100%; object-fit:contain; }
+.hero-shield.fallback{ background: linear-gradient(135deg,#1d4ed8,#3b82f6); color:#fff; font-size:30px; border:0;
+  padding:0; box-shadow:0 8px 20px rgba(29,78,216,.35); }
+.nav-brand img.bin-emblem{ width:58px; height:58px; object-fit:contain; }
 .hero-t{ font-weight:800; font-size:34px; line-height:1.05; color:var(--ink); letter-spacing:-.5px; }
 .hero-s{ font-weight:600; font-size:17px; color:#1c3d82; margin-top:4px; }
 .hero-w{ font-size:14.5px; color:var(--muted); margin-top:2px; }
 .hero-m{ padding:6px 16px; border-left:1px solid var(--line); color:var(--muted); font-size:13px; line-height:1.5; }
 .hero-m b{ color:var(--ink); font-size:15px; }
 .hero-r{ display:flex; align-items:center; gap:12px; }
-.hero-r img{ width:52px; }
+.hero-r img{ width:52px; height:52px; object-fit:contain; }
 .hero-bin{ font-weight:800; font-size:30px; color:#12307a; letter-spacing:1px; padding-right:12px;
   border-right:2px solid var(--line); }
 .hero-dir{ font-size:13px; color:var(--muted); line-height:1.3; }
@@ -122,14 +127,16 @@ div[data-testid="stVerticalBlockBorderWrapper"]{
 
 /* ------------------------------------------------ KPI */
 .kpi{ display:flex; gap:14px; align-items:center; padding:16px 18px; border-radius:16px;
-  border:1px solid; box-shadow: 0 4px 16px rgba(18,48,122,.05); height:100%; overflow:hidden; }
+  border:1px solid; box-shadow: 0 4px 16px rgba(18,48,122,.05); height:100%; min-height:118px;
+  overflow:hidden; }
 .kpi > div:nth-child(2){ min-width:0; flex:1; }
 .kpi-ic{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center;
   font-size:24px; flex:0 0 52px; }
 .kpi-lb{ font-weight:600; font-size:14px; color:#1c3d82; margin-bottom:2px; line-height:1.25; }
 .kpi-v{ font-weight:800; font-size:clamp(22px, 2.1vw, 32px); line-height:1.1; color:var(--ink);
   letter-spacing:-.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.kpi-v small{ font-size:.55em; font-weight:700; letter-spacing:0; margin-left:4px; color:#1c3d82; }
+.kpi-v small{ font-size:.52em; font-weight:600; letter-spacing:.2px; margin-left:6px; color:#1c3d82;
+  vertical-align:0.18em; }
 .kpi-d{ font-size:12px; color:var(--muted); margin-top:3px; line-height:1.35; }
 .kpi-d b.up{ color:#dc2626; } .kpi-d b.down{ color:#16a34a; } .kpi-d b.flat{ color:var(--muted); }
 .kpi-blue{ background:#eaf2ff; border-color:#cfe0fb; } .kpi-blue .kpi-ic{ background:#2563eb; }
@@ -183,10 +190,12 @@ def inject():
 
 
 def hero(data_per, diperbarui):
+    shield = (f'<div class="hero-shield"><img src="{DEPUTI2}" alt="Deputi 2"></div>'
+              if DEPUTI2 else '<div class="hero-shield fallback">🛡️</div>')
     st.markdown(f"""
     <div class="hero">
       <div class="hero-l">
-        <div class="hero-shield">🛡️</div>
+        {shield}
         <div>
           <div class="hero-t">Dashboard Kebencanaan</div>
           <div class="hero-s">Monitoring Kejadian dan Dampak Bencana</div>
@@ -195,7 +204,7 @@ def hero(data_per, diperbarui):
       </div>
       <div class="hero-m">📅 <b>Data per {data_per}</b><br>Diperbarui: {diperbarui}</div>
       <div class="hero-r">
-        <img src="{EMBLEM}">
+        <img src="{EMBLEM}" alt="BIN">
         <div class="hero-bin">BIN</div>
         <div class="hero-dir"><b>DIREKTORAT 2.3</b><br>Sumatera &amp; Kalimantan</div>
       </div>
@@ -206,9 +215,9 @@ def kpi(icon, label, value, delta, cls, unit=""):
     """delta: persentase perubahan vs periode sebelumnya (None = tidak ada pembanding).
     Kenaikan dampak bencana ditandai merah, penurunan hijau."""
     if delta is None:
-        d = '<b class="flat">–</b> tidak ada pembanding'
+        d = '<b class="flat">belum ada</b> pembanding periode'
     elif abs(delta) < 0.05:
-        d = '<b class="flat">▬ 0,0%</b> dari periode sebelumnya'
+        d = '<b class="flat">0,0%</b> dari periode sebelumnya'
     else:
         arrow, c = ("▲", "up") if delta > 0 else ("▼", "down")
         txt = f"{abs(delta):.1f}".replace(".", ",")

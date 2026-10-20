@@ -441,7 +441,7 @@ def kpi_values():
         s = pd.to_numeric(df[col], errors="coerce").dropna()
         return float(s.max()) if len(s) else 0.0
 
-    kejadian = ("Jumlah Kejadian", len(cur), len(pv) if pv is not None else None, 0, "kejadian", "🔔", "blue")
+    kejadian = ("Jumlah Kejadian", len(cur), len(pv) if pv is not None else None, 0, "", "🔔", "blue")
     luas = ("Luas Terdampak", tot(cur, "luas_ha"),
             tot(pv, "luas_ha") if pv is not None else None, 1, "ha", "🗺️", "teal")
     korban = ("Korban Jiwa", tot(cur, "korban_jiwa"),
@@ -760,14 +760,43 @@ elif page == "Rekap Wilayah":
     daftar = prov_list or list(PROVINSI)
     daftar = [p for p in daftar if p in set(inc_all["provinsi"]) or p in PROVINSI]
     tabel = base.set_index("provinsi").reindex(daftar).fillna(0).reset_index()
-    if hs_period is not None and not hs_period.empty:
+    # Hotspot hanya untuk jenis "Semua" / "Karhutla"
+    if pakai_hotspot() and hs_period is not None and not hs_period.empty:
         tabel["hotspot"] = tabel["provinsi"].map(hs_period.groupby("provinsi").size()).fillna(0).astype(int)
+    # Tinggi genangan rata-rata untuk Banjir (kolom tambahan agar lebih kaya info)
+    if tipe == "Banjir" and "tinggi_genangan_cm" in cur.columns:
+        tg = cur.groupby("provinsi")["tinggi_genangan_cm"].mean().round(0)
+        tabel["tinggi_genangan_cm"] = tabel["provinsi"].map(tg).fillna(0).astype(int)
+    # Magnitudo maks untuk Gempa
+    if tipe == "Gempa" and "magnitudo" in cur.columns:
+        mg = cur.groupby("provinsi")["magnitudo"].max().round(1)
+        tabel["magnitudo_maks"] = tabel["provinsi"].map(mg).fillna(0)
     for c in ["kejadian", "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]:
         if c in tabel.columns:
             tabel[c] = tabel[c].astype(int)
     tabel = tabel.sort_values("kejadian", ascending=False).reset_index(drop=True)
+
+    # Kolom yang ditampilkan sesuai jenis bencana
+    kolom_umum = ["provinsi", "kejadian", "korban_jiwa", "pengungsi"]
+    if tipe in ("Semua", "Karhutla"):
+        kolom_tampil = kolom_umum + ["luas_ha", "ispa"]
+        if "hotspot" in tabel.columns:
+            kolom_tampil.append("hotspot")
+    elif tipe == "Banjir":
+        kolom_tampil = kolom_umum + ["rumah_terdampak"]
+        if "tinggi_genangan_cm" in tabel.columns:
+            kolom_tampil.append("tinggi_genangan_cm")
+    elif tipe == "Gempa":
+        kolom_tampil = kolom_umum + ["rumah_terdampak"]
+        if "magnitudo_maks" in tabel.columns:
+            kolom_tampil.append("magnitudo_maks")
+    else:  # Bencana Alam Lainnya
+        kolom_tampil = kolom_umum + ["rumah_terdampak"]
+    kolom_tampil = [c for c in kolom_tampil if c in tabel.columns]
+    tabel_tampil = tabel[kolom_tampil]
+
     with st.container(border=True):
-        theme.panel_title("Rekap per Provinsi", f"({periode.lower()} · {wil_label})")
+        theme.panel_title("Rekap per Provinsi", f"({periode.lower()} · {wil_label} · {tipe})")
         cfg = {
             "provinsi": "Provinsi",
             "kejadian": st.column_config.ProgressColumn("Kejadian", min_value=0,
@@ -775,8 +804,10 @@ elif page == "Rekap Wilayah":
             "luas_ha": st.column_config.NumberColumn("Luas (ha)", format="%.1f"),
             "korban_jiwa": "Korban Jiwa", "pengungsi": "Pengungsi", "ispa": "ISPA",
             "rumah_terdampak": "Rumah Terdampak", "hotspot": "Hotspot (periode)",
+            "tinggi_genangan_cm": st.column_config.NumberColumn("Tinggi Genangan Rata² (cm)", format="%d"),
+            "magnitudo_maks": st.column_config.NumberColumn("Magnitudo Maks (SR)", format="%.1f"),
         }
-        show_df(tabel, column_config=cfg, height=min(40 + 35 * len(tabel), 600))
+        show_df(tabel_tampil, column_config=cfg, height=min(40 + 35 * len(tabel_tampil), 600))
     pilih = st.selectbox("Lihat rincian provinsi", tabel["provinsi"].tolist())
     d = cur[cur["provinsi"] == pilih]
     a, b = st.columns(2)
@@ -806,7 +837,12 @@ elif page == "Rekap Wilayah":
             for c in ["korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]:
                 if c in gk.columns:
                     gk[c] = gk[c].fillna(0).astype(int)
-            # buang kolom numerik kalau semuanya 0 (biar relevan dengan jenis dominan di provinsi ini)
+            # Drop kolom tidak relevan dengan jenis bencana yang difilter
+            if tipe == "Banjir" or tipe == "Gempa" or tipe == "Bencana Alam Lainnya":
+                for c in ["luas_ha", "ispa"]:
+                    if c in gk.columns:
+                        gk = gk.drop(columns=c)
+            # buang kolom numerik kalau semuanya 0
             for c in ["luas_ha", "ispa", "rumah_terdampak"]:
                 if c in gk.columns and gk[c].sum() == 0:
                     gk = gk.drop(columns=c)
