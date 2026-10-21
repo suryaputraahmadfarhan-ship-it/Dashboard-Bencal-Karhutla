@@ -345,6 +345,30 @@ wil_label = "Sumatera dan Kalimantan" if wilayah == "Sumatera & Kalimantan" else
 
 
 # ====================================================================== helper filter kondisional
+def _metrik_tren(tp):
+    """Daftar (metrik, judul, agregasi) untuk chart tren bulanan per jenis spesifik."""
+    if tp == "Karhutla":
+        return [("kejadian", "Jumlah Kejadian Karhutla", "count"),
+                ("luas_ha", "Luas Terdampak (ha)", "sum"),
+                ("ispa", "Kasus ISPA", "sum"),
+                ("korban_jiwa", "Korban Jiwa", "sum")]
+    if tp == "Banjir":
+        return [("kejadian", "Jumlah Kejadian Banjir", "count"),
+                ("rumah_terdampak", "Rumah Terdampak", "sum"),
+                ("tinggi_genangan_cm", "Tinggi Genangan Rata-rata (cm)", "mean"),
+                ("pengungsi", "Pengungsi", "sum")]
+    if tp == "Gempa":
+        return [("kejadian", "Jumlah Kejadian Gempa", "count"),
+                ("magnitudo", "Magnitudo Maksimum (SR)", "max"),
+                ("rumah_terdampak", "Rumah Terdampak", "sum"),
+                ("korban_jiwa", "Korban Jiwa", "sum")]
+    # Bencana Alam Lainnya
+    return [("kejadian", "Jumlah Kejadian", "count"),
+            ("rumah_terdampak", "Rumah Terdampak", "sum"),
+            ("pengungsi", "Pengungsi", "sum"),
+            ("korban_jiwa", "Korban Jiwa", "sum")]
+
+
 def pakai_hotspot():
     return tipe in ("Semua", "Karhutla")
 
@@ -626,51 +650,83 @@ elif page == "Data & Grafik":
         st.stop()
     t1, t2, t3 = st.tabs(["Ringkasan Grafik", "Tren Waktu", "Tabel Data"])
     with t1:
-        gt = agg_tipe(cur).copy()
-        extra = {}
-        for col_name, src_col in [("rumah_terdampak", "rumah_terdampak"), ("pengungsi", "pengungsi"),
-                                   ("tinggi_genangan_cm", "tinggi_genangan_cm"), ("magnitudo", "magnitudo")]:
-            if src_col in cur.columns:
-                agg = cur.groupby("tipe_bencana")[src_col].sum(min_count=1) if col_name in (
-                    "rumah_terdampak", "pengungsi") else cur.groupby("tipe_bencana")[src_col].mean()
-                extra[col_name] = agg
-        for k, v in extra.items():
-            gt[k] = gt["tipe_bencana"].map(v).fillna(0)
-        charts_default = [("kejadian", "Jumlah Kejadian per Jenis"),
-                          ("luas_ha", "Luas Terdampak (ha) per Jenis"),
-                          ("korban_jiwa", "Korban Jiwa per Jenis"),
-                          ("ispa", "Kasus ISPA per Jenis")]
-        if tipe == "Banjir":
+        # Jika filter spesifik ke 1 jenis, bar "per Jenis" hanya 1 batang (tidak informatif).
+        # Ganti dengan tren bulanan multi-metrik dinamis.
+        if tipe == "Semua":
+            gt = agg_tipe(cur).copy()
+            extra = {}
+            for col_name, src_col in [("rumah_terdampak", "rumah_terdampak"), ("pengungsi", "pengungsi")]:
+                if src_col in cur.columns:
+                    extra[col_name] = cur.groupby("tipe_bencana")[src_col].sum(min_count=1)
+            for k, v in extra.items():
+                gt[k] = gt["tipe_bencana"].map(v).fillna(0)
             charts = [("kejadian", "Jumlah Kejadian per Jenis"),
-                      ("rumah_terdampak", "Rumah Terdampak per Jenis"),
+                      ("luas_ha", "Luas Terdampak (ha) per Jenis"),
                       ("korban_jiwa", "Korban Jiwa per Jenis"),
-                      ("pengungsi", "Pengungsi per Jenis")]
-        elif tipe == "Gempa":
-            charts = [("kejadian", "Jumlah Kejadian per Jenis"),
-                      ("rumah_terdampak", "Rumah Terdampak per Jenis"),
-                      ("korban_jiwa", "Korban Jiwa per Jenis"),
-                      ("magnitudo", "Magnitudo Rata-rata (SR) per Jenis")]
-        elif tipe == "Bencana Alam Lainnya":
-            charts = [("kejadian", "Jumlah Kejadian per Jenis"),
-                      ("rumah_terdampak", "Rumah Terdampak per Jenis"),
-                      ("korban_jiwa", "Korban Jiwa per Jenis"),
-                      ("pengungsi", "Pengungsi per Jenis")]
+                      ("ispa", "Kasus ISPA per Jenis")]
+            c1, c2 = st.columns(2)
+            for col, (y, title) in zip([c1, c2, c1, c2], charts):
+                with col, st.container(border=True):
+                    theme.panel_title(title)
+                    if y not in gt.columns:
+                        st.caption("Tidak ada data untuk metrik ini.")
+                        continue
+                    fig = px.bar(gt, x="tipe_bencana", y=y, color="tipe_bencana", color_discrete_map=TIPE_COLOR,
+                                 text_auto=".1f" if y == "luas_ha" else True)
+                    fig.update_traces(textposition="outside", cliponaxis=False)
+                    fig.update_xaxes(title=None)
+                    fig.update_yaxes(title=None)
+                    show(style(fig, 280, legend=False))
         else:
-            charts = charts_default
-        c1, c2 = st.columns(2)
-        for col, (y, title) in zip([c1, c2, c1, c2], charts):
-            with col, st.container(border=True):
-                theme.panel_title(title)
-                if y not in gt.columns:
-                    st.caption("Tidak ada data untuk metrik ini.")
-                    continue
-                text_fmt = ".1f" if y in ("luas_ha", "magnitudo") else True
-                fig = px.bar(gt, x="tipe_bencana", y=y, color="tipe_bencana", color_discrete_map=TIPE_COLOR,
-                             text_auto=text_fmt)
-                fig.update_traces(textposition="outside", cliponaxis=False)
-                fig.update_xaxes(title=None)
-                fig.update_yaxes(title=None)
-                show(style(fig, 280, legend=False))
+            # TREN BULANAN per metrik untuk jenis spesifik
+            series = _metrik_tren(tipe)
+            warna_jenis = TIPE_COLOR.get(tipe, "#2563eb")
+            # Pilih granularity: 'D' kalau periode <=14 hari, 'W' kalau <=90, 'M' kalau >90/all
+            if days is None or days > 90:
+                freq, label_fmt = "ME", "%b %Y"
+                granularity = "bulanan"
+            elif days > 14:
+                freq, label_fmt = "W-MON", "%d %b"
+                granularity = "mingguan"
+            else:
+                freq, label_fmt = "D", "%d %b"
+                granularity = "harian"
+            tt = cur.copy()
+            tt["periode_grup"] = tt["tanggal"].dt.to_period(freq[0] if freq != "ME" else "M").dt.start_time
+            c1, c2 = st.columns(2)
+            for col, (metric, title, agg_func) in zip([c1, c2, c1, c2], series):
+                with col, st.container(border=True):
+                    theme.panel_title(title, f"(tren {granularity})")
+                    if metric == "kejadian":
+                        g = tt.groupby("periode_grup").size().reset_index(name="val")
+                    elif metric not in tt.columns:
+                        st.caption("Tidak ada data untuk metrik ini.")
+                        continue
+                    else:
+                        s = pd.to_numeric(tt[metric], errors="coerce")
+                        if agg_func == "mean":
+                            g = s.groupby(tt["periode_grup"]).mean().reset_index(name="val")
+                        elif agg_func == "max":
+                            g = s.groupby(tt["periode_grup"]).max().reset_index(name="val")
+                        else:
+                            g = s.groupby(tt["periode_grup"]).sum(min_count=1).reset_index(name="val")
+                        g["val"] = g["val"].fillna(0)
+                    if g.empty or g["val"].sum() == 0:
+                        st.caption("Belum ada nilai pada metrik ini.")
+                        continue
+                    g["label"] = g["periode_grup"].dt.strftime(label_fmt)
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(x=g["label"], y=g["val"], marker_color=warna_jenis,
+                                         text=[fmt_num(v, 1 if metric in ("luas_ha", "magnitudo") else 0) for v in g["val"]],
+                                         textposition="outside", cliponaxis=False, opacity=0.85,
+                                         name=metric, hovertemplate="%{x}<br>%{y}<extra></extra>"))
+                    fig.add_trace(go.Scatter(x=g["label"], y=g["val"], mode="lines+markers",
+                                             line=dict(color=warna_jenis, width=2),
+                                             marker=dict(size=7, color=warna_jenis),
+                                             showlegend=False, hoverinfo="skip"))
+                    fig.update_xaxes(title=None, type="category", tickangle=-30, tickfont_size=10)
+                    fig.update_yaxes(title=None)
+                    show(style(fig, 280, legend=False))
         with st.container(border=True):
             theme.panel_title("Kejadian per Provinsi", "(15 teratas)")
             gp = agg_prov(cur).head(15).iloc[::-1]
@@ -873,43 +929,84 @@ elif page == "Rekap Wilayah":
         show_df(tabel_tampil, column_config=cfg, height=min(40 + 35 * len(tabel_tampil), 600))
     pilih = st.selectbox("Lihat rincian provinsi", tabel["provinsi"].tolist())
     d = cur[cur["provinsi"] == pilih]
-    a, b = st.columns(2)
+    a, b = st.columns([1.1, 1])
+
     with a, st.container(border=True):
-        theme.panel_title(f"Jenis Bencana - {pilih}")
-        if d.empty:
-            st.caption("Tidak ada kejadian pada periode ini.")
+        if tipe == "Semua":
+            theme.panel_title(f"Komposisi Jenis Bencana - {pilih}")
+            if d.empty:
+                st.caption("Tidak ada kejadian pada periode ini.")
+            else:
+                g = d["tipe_bencana"].value_counts().reset_index()
+                g.columns = ["tipe_bencana", "kejadian"]
+                fig = px.bar(g, x="tipe_bencana", y="kejadian", color="tipe_bencana",
+                             color_discrete_map=TIPE_COLOR, text="kejadian")
+                fig.update_traces(textposition="outside", cliponaxis=False)
+                fig.update_xaxes(title=None)
+                fig.update_yaxes(title=None)
+                show(style(fig, 300, legend=False))
         else:
-            g = d["tipe_bencana"].value_counts().reset_index()
-            g.columns = ["tipe_bencana", "kejadian"]
-            fig = px.bar(g, x="tipe_bencana", y="kejadian", color="tipe_bencana", color_discrete_map=TIPE_COLOR,
-                         text="kejadian")
-            fig.update_xaxes(title=None)
-            fig.update_yaxes(title=None)
-            show(style(fig, 280, legend=False))
+            # Filter spesifik → ganti pie/bar 1-batang dengan tren bulanan kejadian jenis itu di provinsi
+            if days is None or days > 90:
+                freq, label_fmt, granularity = "M", "%b %Y", "bulanan"
+            elif days > 14:
+                freq, label_fmt, granularity = "W", "%d %b", "mingguan"
+            else:
+                freq, label_fmt, granularity = "D", "%d %b", "harian"
+            theme.panel_title(f"Tren Kejadian {tipe} - {pilih}", f"({granularity})")
+            if d.empty:
+                st.caption("Tidak ada kejadian pada periode ini.")
+            else:
+                dd = d.copy()
+                dd["grp"] = dd["tanggal"].dt.to_period(freq).dt.start_time
+                g = dd.groupby("grp").size().reset_index(name="kejadian")
+                g["label"] = g["grp"].dt.strftime(label_fmt)
+                warna = TIPE_COLOR.get(tipe, "#2563eb")
+                fig = go.Figure()
+                fig.add_trace(go.Bar(x=g["label"], y=g["kejadian"], marker_color=warna, opacity=0.85,
+                                     text=g["kejadian"], textposition="outside", cliponaxis=False,
+                                     hovertemplate="%{x}<br>%{y} kejadian<extra></extra>"))
+                fig.add_trace(go.Scatter(x=g["label"], y=g["kejadian"], mode="lines+markers",
+                                         line=dict(color=warna, width=2),
+                                         marker=dict(size=7, color=warna), showlegend=False, hoverinfo="skip"))
+                fig.update_xaxes(title=None, type="category", tickangle=-30, tickfont_size=10)
+                fig.update_yaxes(title=None)
+                show(style(fig, 300, legend=False))
+
     with b, st.container(border=True):
         theme.panel_title(f"Kabupaten/Kota - {pilih}")
         if d.empty:
             st.caption("Tidak ada kejadian pada periode ini.")
         else:
+            # Kolom "Jenis Bencana" per kabupaten agar tidak ambigu
+            jenis_kab = (d.groupby("kabupaten")["tipe_bencana"]
+                         .apply(lambda s: ", ".join(sorted(set(s)))).reset_index(name="jenis_bencana"))
             aggs = {"kejadian": ("tipe_bencana", "size"), "luas_ha": ("luas_ha", "sum"),
                     "korban_jiwa": ("korban_jiwa", "sum"), "pengungsi": ("pengungsi", "sum"),
                     "ispa": ("ispa", "sum")}
             if "rumah_terdampak" in d.columns:
                 aggs["rumah_terdampak"] = ("rumah_terdampak", "sum")
-            gk = (d.groupby("kabupaten").agg(**aggs).reset_index().sort_values("kejadian", ascending=False))
+            gk = (d.groupby("kabupaten").agg(**aggs).reset_index()
+                  .merge(jenis_kab, on="kabupaten")
+                  .sort_values("kejadian", ascending=False))
+            # susun ulang kolom: kabupaten, jenis_bencana, kejadian, ...
+            cols_order = ["kabupaten", "jenis_bencana", "kejadian", "luas_ha", "korban_jiwa",
+                          "pengungsi", "ispa", "rumah_terdampak"]
+            gk = gk[[c for c in cols_order if c in gk.columns]]
             for c in ["korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]:
                 if c in gk.columns:
                     gk[c] = gk[c].fillna(0).astype(int)
-            # Drop kolom tidak relevan dengan jenis bencana yang difilter
-            if tipe == "Banjir" or tipe == "Gempa" or tipe == "Bencana Alam Lainnya":
+            if tipe in ("Banjir", "Gempa", "Bencana Alam Lainnya"):
                 for c in ["luas_ha", "ispa"]:
                     if c in gk.columns:
                         gk = gk.drop(columns=c)
-            # buang kolom numerik kalau semuanya 0
             for c in ["luas_ha", "ispa", "rumah_terdampak"]:
                 if c in gk.columns and gk[c].sum() == 0:
                     gk = gk.drop(columns=c)
             show_df(gk, column_config={
+                "kabupaten": "Kabupaten/Kota",
+                "jenis_bencana": st.column_config.TextColumn("Jenis Bencana", width="medium"),
+                "kejadian": "Kejadian",
                 "luas_ha": st.column_config.NumberColumn("Luas (ha)", format="%.1f"),
                 "korban_jiwa": "Korban Jiwa", "pengungsi": "Pengungsi",
                 "ispa": "ISPA", "rumah_terdampak": "Rumah Terdampak",
@@ -1026,7 +1123,10 @@ elif page == "Laporan":
                 "spesifik": metrik_spesifik(cur_j),
                 "top_hotspot": top_h_j, "hotspot_full": hotspot_full_j,
                 "hotspot_tgl": tgl_id(hs_end) if hs_end is not None else "",
-                "pembuat": f"{user['name']} ({user['role']})", "demo": is_demo}
+                "pembuat": f"{user['name']} ({user['role']})", "demo": is_demo,
+                # Untuk format intel brief
+                "df_cur": cur_j,
+                "hs_today_df": hs_today if jenis_laporan in ("Semua", "Karhutla") else None}
 
     tab_laporan, tab_buat = st.tabs(["📄 Unduh Laporan", "✍️ Buat Laporan dari Teks"])
 

@@ -10,6 +10,7 @@ BULAN_PANJANG = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli",
                  "September", "Oktober", "November", "Desember"]
 
 PERIODE = {
+    "Hari ini": 1,
     "7 hari terakhir": 7,
     "14 hari terakhir": 14,
     "30 hari terakhir": 30,
