@@ -79,12 +79,10 @@ section[data-testid="stSidebar"]{
   background: linear-gradient(180deg, var(--navy) 0%, var(--navy2) 100%);
   border-right: 0;
 }
-/* Buang padding atas Streamlit yang berlebihan + ruang kosong sebelum nav-brand */
-section[data-testid="stSidebar"] > div:first-child{ padding-top: 0 !important; }
-section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{ padding-top: 0 !important; }
-section[data-testid="stSidebar"] [data-testid="stSidebarHeader"]{ padding: 0 !important; min-height: 0; height: 0; }
-/* Hilangkan margin pada Markdown chunk pertama di sidebar */
-section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:first-child > div > div > [data-testid="stMarkdown"]:first-child{ margin-top: -8px; }
+/* Padding atas sidebar tetap ada untuk ruang tombol collapse Streamlit (hamburger),
+   tapi ruang kosong di antara header dan konten dirapatkan. */
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{ padding-top: .4rem !important; }
+section[data-testid="stSidebar"] [data-testid="stSidebarHeader"]{ padding-bottom: 0 !important; }
 section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] > *:first-child{ margin-top: 0 !important; }
 section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] span, section[data-testid="stSidebar"] div{ color:#eaf1ff; }
