@@ -37,6 +37,27 @@ HOTSPOT_BUCKET_COLOR = {
     "1 – 5 hotspot": "#10b981",
 }
 
+# Warna PER METRIK — konsisten dipakai di seluruh dashboard (bukan per jenis bencana).
+# Dampak kemanusiaan = merah/orange, dampak lingkungan = teal/hijau, infra = rose.
+METRIK_COLOR = {
+    "kejadian":           "#2563eb",  # biru = jumlah kejadian
+    "luas_ha":            "#0d9488",  # teal = luas terdampak (lingkungan)
+    "korban_jiwa":        "#dc2626",  # merah = korban jiwa (gawat)
+    "pengungsi":          "#f59e0b",  # amber = pengungsi
+    "ispa":               "#8b5cf6",  # ungu = kesehatan (ISPA)
+    "rumah_terdampak":    "#e11d48",  # rose = rumah terdampak (infra)
+    "tinggi_genangan_cm": "#0ea5e9",  # cyan = tinggi genangan (air)
+    "magnitudo":          "#475569",  # slate = magnitudo (geofisika)
+    "hotspot":            "#ea580c",  # orange tua = titik api
+}
+METRIK_LABEL = {
+    "kejadian": "Jumlah Kejadian", "luas_ha": "Luas Terdampak (ha)",
+    "korban_jiwa": "Korban Jiwa", "pengungsi": "Pengungsi",
+    "ispa": "Kasus ISPA", "rumah_terdampak": "Rumah Terdampak",
+    "tinggi_genangan_cm": "Tinggi Genangan (cm)", "magnitudo": "Magnitudo (SR)",
+    "hotspot": "Titik Hotspot",
+}
+
 CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
@@ -58,22 +79,25 @@ section[data-testid="stSidebar"]{
   background: linear-gradient(180deg, var(--navy) 0%, var(--navy2) 100%);
   border-right: 0;
 }
-section[data-testid="stSidebar"] > div{ padding-top: .6rem; }
+/* Buang padding atas Streamlit yang berlebihan + ruang kosong sebelum nav-brand */
+section[data-testid="stSidebar"] > div:first-child{ padding-top: 0 !important; }
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{ padding-top: .4rem; }
+section[data-testid="stSidebar"] [data-testid="stSidebarHeader"]{ padding-bottom: 0 !important; min-height:0; }
 section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] span, section[data-testid="stSidebar"] div{ color:#eaf1ff; }
-.nav-brand{ display:flex; gap:12px; align-items:center; padding:6px 4px 14px 4px;
-  border-bottom:1px solid rgba(255,255,255,.18); margin-bottom:14px; }
-.nav-brand img{ width:58px; height:58px; object-fit:contain; background:#fff; border-radius:10px; padding:4px; }
-.nav-brand .b1{ font-weight:800; font-size:13.5px; line-height:1.25; color:#fff; }
-.nav-brand .b2{ font-size:11.5px; letter-spacing:.6px; color:#b9cdf5; }
-.nav-dir{ padding:2px 4px 14px 4px; color:#fff; }
-.nav-dir .d1{ font-weight:800; font-size:15px; }
-.nav-dir .d2{ font-size:13px; color:#cfe0ff; line-height:1.4; }
+.nav-brand{ display:flex; gap:10px; align-items:center; padding:4px 2px 10px 2px;
+  border-bottom:1px solid rgba(255,255,255,.15); margin:0 0 10px 0; }
+.nav-brand img{ width:48px; height:48px; object-fit:contain; background:#fff; border-radius:8px; padding:3px; flex-shrink:0; }
+.nav-brand .b1{ font-weight:800; font-size:12.5px; line-height:1.2; color:#fff; }
+.nav-brand .b2{ font-size:10.5px; letter-spacing:.5px; color:#b9cdf5; margin-top:1px; }
+.nav-dir{ padding:0 2px 10px 2px; color:#fff; }
+.nav-dir .d1{ font-weight:800; font-size:13.5px; line-height:1.2; }
+.nav-dir .d2{ font-size:11.5px; color:#cfe0ff; line-height:1.35; margin-top:2px; }
 
 /* menu navigasi (st.radio) tampil seperti tombol menu */
-section[data-testid="stSidebar"] div[role="radiogroup"]{ gap:6px; }
+section[data-testid="stSidebar"] div[role="radiogroup"]{ gap:4px; margin-top:2px; }
 section[data-testid="stSidebar"] div[role="radiogroup"] label{
-  width:100%; padding:11px 14px; border-radius:10px; cursor:pointer; margin:0;
+  width:100%; padding:9px 12px; border-radius:9px; cursor:pointer; margin:0;
   transition: background .15s ease;
 }
 section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{ background: rgba(255,255,255,.10); }
@@ -82,13 +106,13 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label > div{ gap:0; }
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){
   background: #2563eb; box-shadow: 0 4px 14px rgba(37,99,235,.45);
 }
-section[data-testid="stSidebar"] div[role="radiogroup"] label p{ font-size:14.5px; font-weight:600; color:#fff; }
-.navuser{ margin-top:14px; padding:12px 14px; border-radius:12px; background: rgba(255,255,255,.08);
+section[data-testid="stSidebar"] div[role="radiogroup"] label p{ font-size:13.5px; font-weight:600; color:#fff; }
+.navuser{ margin-top:10px; padding:10px 12px; border-radius:10px; background: rgba(255,255,255,.08);
   border:1px solid rgba(255,255,255,.14); }
-.navuser .u1{ font-weight:700; font-size:14px; color:#fff; }
-.navuser .u2{ font-size:12px; color:#b9cdf5; }
-.navtag{ margin-top:26px; padding:0 6px; font-style:italic; font-weight:700; color:#d8e5ff;
-  font-size:16px; line-height:1.35; transform: rotate(-4deg); transform-origin:left; }
+.navuser .u1{ font-weight:700; font-size:13px; color:#fff; }
+.navuser .u2{ font-size:11.5px; color:#b9cdf5; }
+.navtag{ margin-top:14px; padding:0 4px; font-style:italic; font-weight:700; color:#d8e5ff;
+  font-size:13.5px; line-height:1.3; }
 section[data-testid="stSidebar"] .stButton > button{
   width:100%; background: rgba(255,255,255,.10); color:#fff; border:1px solid rgba(255,255,255,.25);
   border-radius:10px; font-weight:600; }

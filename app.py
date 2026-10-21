@@ -20,7 +20,7 @@ from data_utils import (KOLOM_TEMPLATE_BENCANA, KOLOM_TEMPLATE_HOTSPOT, PERIODE,
                         delta_pct, fmt_compact, fmt_num, normalize_bencana, normalize_hotspot, peta_view,
                         split_periode, tgl_id, tipe_tersedia, wilayah_options, wilayah_provinsi)
 from report import build_docx, build_xlsx  # noqa: E402
-from theme import EMBLEM, HOTSPOT_BUCKET_COLOR, TIPE_COLOR, TIPE_ICON  # noqa: E402
+from theme import EMBLEM, HOTSPOT_BUCKET_COLOR, METRIK_COLOR, METRIK_LABEL, TIPE_COLOR, TIPE_ICON  # noqa: E402
 
 MAP_STYLE = os.environ.get("MAP_STYLE", "carto-positron")  # "white-bg" bila jaringan tanpa internet
 
@@ -50,6 +50,40 @@ def style(fig, h=320, legend=True):
                       showlegend=legend, legend_title_text="")
     fig.update_xaxes(showgrid=False, linecolor="#dbe6f6")
     fig.update_yaxes(gridcolor="#e8eef9", zeroline=False)
+    return fig
+
+
+def tren_bar(labels, values, color, metric="kejadian", height=280):
+    """Bar + line overlay dengan label angka di atas setiap batang.
+    Dipakai untuk visualisasi tren yang mudah dibaca pimpinan."""
+    labels = list(labels)
+    values = list(values)
+    digits = 1 if metric in ("luas_ha", "magnitudo", "tinggi_genangan_cm") else 0
+    texts = [fmt_num(v, digits) for v in values]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=labels, y=values, marker=dict(color=color, line=dict(color=color, width=0)),
+        opacity=0.88, text=texts, textposition="outside", cliponaxis=False,
+        textfont=dict(size=11, color="#0f2a5c", family="Plus Jakarta Sans"),
+        hovertemplate="<b>%{x}</b><br>%{y:,.1f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=labels, y=values, mode="lines+markers",
+        line=dict(color=color, width=2), marker=dict(size=6, color=color, line=dict(color="#fff", width=1.5)),
+        showlegend=False, hoverinfo="skip",
+    ))
+    fig.update_layout(
+        height=height, showlegend=False, bargap=0.3,
+        margin=dict(l=8, r=8, t=28, b=8), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Plus Jakarta Sans, Segoe UI, sans-serif", size=12, color="#0f2a5c"),
+    )
+    fig.update_xaxes(type="category", tickangle=-30 if len(labels) > 6 else 0,
+                     tickfont_size=10, showgrid=False, linecolor="#dbe6f6")
+    # Headroom untuk label angka
+    yv = [v for v in values if v is not None]
+    ymax = max(yv) if yv else 1
+    fig.update_yaxes(range=[0, ymax * 1.22 if ymax > 0 else 1],
+                     gridcolor="#e8eef9", zeroline=False, showticklabels=False)
     return fig
 
 
@@ -591,23 +625,27 @@ if page == "Beranda":
     colA, colB, colC = st.columns([1, 1, 1.15])
 
     with colA, st.container(border=True):
-        theme.panel_title("📊 Tren Kejadian", f"({periode.lower()})")
+        if days is None or days > 30:
+            gran = "bulanan"
+        elif days > 7:
+            gran = "mingguan"
+        else:
+            gran = "harian"
+        theme.panel_title("📊 Tren Kejadian", f"(tren {gran})")
         if cur.empty:
             st.caption("Tidak ada data pada filter ini.")
         else:
-            if days is not None and days <= 31:
-                idx = pd.date_range(end_date - pd.Timedelta(days=days - 1), end_date)
+            if days is not None and days <= 7:
+                idx = pd.date_range(end_date - pd.Timedelta(days=max(days - 1, 0)), end_date)
                 s = cur.groupby(cur["tanggal"].dt.normalize()).size().reindex(idx, fill_value=0)
                 labels = [tgl_id(i) for i in s.index]
-            else:
+            elif days is not None and days <= 30:
                 s = cur.groupby(cur["tanggal"].dt.to_period("W").dt.start_time).size()
                 labels = [tgl_id(i) for i in s.index]
-            colors = ["#60a5fa"] * (len(s) - 1) + ["#1d4ed8"]
-            fig = go.Figure(go.Bar(x=labels, y=s.values, text=s.values, textposition="outside",
-                                   marker_color=colors, cliponaxis=False))
-            style(fig, 280, legend=False)
-            fig.update_xaxes(type="category", tickangle=-40, tickfont_size=10)
-            show(fig)
+            else:
+                s = cur.groupby(cur["tanggal"].dt.to_period("M").dt.start_time).size()
+                labels = [i.strftime("%b %Y") for i in s.index]
+            show(tren_bar(labels, list(s.values), METRIK_COLOR["kejadian"], "kejadian", height=280))
 
     with colB, st.container(border=True):
         theme.panel_title("🧭 Jenis Bencana", "(Jumlah Kejadian)")
@@ -678,21 +716,16 @@ elif page == "Data & Grafik":
                     fig.update_yaxes(title=None)
                     show(style(fig, 280, legend=False))
         else:
-            # TREN BULANAN per metrik untuk jenis spesifik
+            # TREN per metrik untuk jenis spesifik — >30 hari = bulanan
             series = _metrik_tren(tipe)
-            warna_jenis = TIPE_COLOR.get(tipe, "#2563eb")
-            # Pilih granularity: 'D' kalau periode <=14 hari, 'W' kalau <=90, 'M' kalau >90/all
-            if days is None or days > 90:
-                freq, label_fmt = "ME", "%b %Y"
-                granularity = "bulanan"
-            elif days > 14:
-                freq, label_fmt = "W-MON", "%d %b"
-                granularity = "mingguan"
+            if days is None or days > 30:
+                freq, label_fmt, granularity = "M", "%b %Y", "bulanan"
+            elif days > 7:
+                freq, label_fmt, granularity = "W", "%d %b", "mingguan"
             else:
-                freq, label_fmt = "D", "%d %b"
-                granularity = "harian"
+                freq, label_fmt, granularity = "D", "%d %b", "harian"
             tt = cur.copy()
-            tt["periode_grup"] = tt["tanggal"].dt.to_period(freq[0] if freq != "ME" else "M").dt.start_time
+            tt["periode_grup"] = tt["tanggal"].dt.to_period(freq).dt.start_time
             c1, c2 = st.columns(2)
             for col, (metric, title, agg_func) in zip([c1, c2, c1, c2], series):
                 with col, st.container(border=True):
@@ -715,23 +748,13 @@ elif page == "Data & Grafik":
                         st.caption("Belum ada nilai pada metrik ini.")
                         continue
                     g["label"] = g["periode_grup"].dt.strftime(label_fmt)
-                    fig = go.Figure()
-                    fig.add_trace(go.Bar(x=g["label"], y=g["val"], marker_color=warna_jenis,
-                                         text=[fmt_num(v, 1 if metric in ("luas_ha", "magnitudo") else 0) for v in g["val"]],
-                                         textposition="outside", cliponaxis=False, opacity=0.85,
-                                         name=metric, hovertemplate="%{x}<br>%{y}<extra></extra>"))
-                    fig.add_trace(go.Scatter(x=g["label"], y=g["val"], mode="lines+markers",
-                                             line=dict(color=warna_jenis, width=2),
-                                             marker=dict(size=7, color=warna_jenis),
-                                             showlegend=False, hoverinfo="skip"))
-                    fig.update_xaxes(title=None, type="category", tickangle=-30, tickfont_size=10)
-                    fig.update_yaxes(title=None)
-                    show(style(fig, 280, legend=False))
+                    warna_m = METRIK_COLOR.get(metric, "#2563eb")
+                    show(tren_bar(g["label"], g["val"], warna_m, metric))
         with st.container(border=True):
             theme.panel_title("Kejadian per Provinsi", "(15 teratas)")
             gp = agg_prov(cur).head(15).iloc[::-1]
             fig = px.bar(gp, x="kejadian", y="provinsi", orientation="h", text="kejadian",
-                         color_discrete_sequence=["#2563eb"])
+                         color_discrete_sequence=[METRIK_COLOR["kejadian"]])
             fig.update_traces(textposition="outside", cliponaxis=False)
             fig.update_xaxes(title=None)
             fig.update_yaxes(title=None)
@@ -748,50 +771,90 @@ elif page == "Data & Grafik":
             else:
                 st.caption("Tidak ada data pada filter ini.")
     with t2:
+        # Granularity: >30 hari = bulanan, >7 = mingguan, else harian — konsisten di seluruh dashboard
+        if days is None or days > 30:
+            freq, label_fmt, granularity = "M", "%b %Y", "bulanan"
+        elif days > 7:
+            freq, label_fmt, granularity = "W", "%d %b", "mingguan"
+        else:
+            freq, label_fmt, granularity = "D", "%d %b", "harian"
         tt = cur.copy()
-        tt["minggu"] = tt["tanggal"].dt.to_period("W").dt.start_time
-        g = tt.groupby(["minggu", "tipe_bencana"]).size().reset_index(name="kejadian")
+        tt["periode_grup"] = tt["tanggal"].dt.to_period(freq).dt.start_time
+
+        # 1) Tren kejadian per jenis — stacked bar, warna per jenis (TIPE_COLOR)
         with st.container(border=True):
-            theme.panel_title("Kejadian Mingguan per Jenis Bencana")
-            fig = px.area(g, x="minggu", y="kejadian", color="tipe_bencana", color_discrete_map=TIPE_COLOR)
-            fig.update_xaxes(title=None)
-            fig.update_yaxes(title=None)
-            show(style(fig, 340))
+            theme.panel_title(f"Kejadian per Jenis Bencana", f"(tren {granularity})")
+            g = tt.groupby(["periode_grup", "tipe_bencana"]).size().reset_index(name="kejadian")
+            if g.empty:
+                st.caption("Tidak ada data.")
+            else:
+                g["label"] = g["periode_grup"].dt.strftime(label_fmt)
+                total_per_periode = g.groupby("label")["kejadian"].sum()
+                fig = go.Figure()
+                for tp in [t for t in ["Karhutla", "Banjir", "Gempa", "Bencana Alam Lainnya"]
+                           if t in g["tipe_bencana"].values]:
+                    sub = g[g["tipe_bencana"] == tp]
+                    fig.add_trace(go.Bar(
+                        x=sub["label"], y=sub["kejadian"], name=tp,
+                        marker=dict(color=TIPE_COLOR.get(tp, "#64748b")),
+                        hovertemplate=f"<b>%{{x}}</b><br>{tp}: %{{y}} kejadian<extra></extra>",
+                    ))
+                # Total label di atas setiap stack
+                labels_sorted = sorted(g["label"].unique(), key=lambda s: g[g["label"] == s]["periode_grup"].iloc[0])
+                fig.add_trace(go.Scatter(
+                    x=labels_sorted,
+                    y=[total_per_periode[l] for l in labels_sorted],
+                    text=[fmt_num(total_per_periode[l]) for l in labels_sorted],
+                    mode="text", textposition="top center",
+                    textfont=dict(size=12, color="#0f2a5c", family="Plus Jakarta Sans"),
+                    showlegend=False, hoverinfo="skip",
+                ))
+                ymax = int(total_per_periode.max()) if len(total_per_periode) else 1
+                fig.update_layout(
+                    barmode="stack", height=360, bargap=0.3,
+                    margin=dict(l=8, r=8, t=28, b=8),
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="Plus Jakarta Sans, Segoe UI, sans-serif", size=12, color="#0f2a5c"),
+                    legend=dict(orientation="h", y=1.08, x=0, title_text=""),
+                )
+                fig.update_xaxes(type="category", tickangle=-30 if len(labels_sorted) > 6 else 0,
+                                 showgrid=False, linecolor="#dbe6f6")
+                fig.update_yaxes(range=[0, ymax * 1.18 if ymax else 1], gridcolor="#e8eef9", zeroline=False)
+                show(fig)
+
+        # 2) Tren metrik dampak — pakai METRIK_COLOR (korban=merah, ispa=ungu, dll)
         agg_cols = {"korban_jiwa": ("korban_jiwa", "sum"), "luas_ha": ("luas_ha", "sum"),
                     "ispa": ("ispa", "sum")}
         if "rumah_terdampak" in tt.columns:
             agg_cols["rumah_terdampak"] = ("rumah_terdampak", "sum")
         if "pengungsi" in tt.columns:
             agg_cols["pengungsi"] = ("pengungsi", "sum")
-        w = tt.groupby("minggu").agg(**agg_cols).reset_index()
-        default_series = [("luas_ha", "Luas Terdampak (ha) per Minggu", "#0d9488"),
-                          ("korban_jiwa", "Korban Jiwa per Minggu", "#f97316"),
-                          ("ispa", "Kasus ISPA per Minggu", "#8b5cf6")]
+        if "tinggi_genangan_cm" in tt.columns:
+            agg_cols["tinggi_genangan_cm"] = ("tinggi_genangan_cm", "mean")
+        w = tt.groupby("periode_grup").agg(**agg_cols).reset_index()
+        w["label"] = w["periode_grup"].dt.strftime(label_fmt)
+
         if tipe == "Banjir":
-            series = [("rumah_terdampak", "Rumah Terdampak per Minggu", "#0d9488"),
-                      ("korban_jiwa", "Korban Jiwa per Minggu", "#f97316"),
-                      ("pengungsi", "Pengungsi per Minggu", "#8b5cf6")]
+            series = ["rumah_terdampak", "tinggi_genangan_cm", "pengungsi", "korban_jiwa"]
         elif tipe == "Gempa":
-            series = [("rumah_terdampak", "Rumah Terdampak per Minggu", "#0d9488"),
-                      ("korban_jiwa", "Korban Jiwa per Minggu", "#f97316"),
-                      ("pengungsi", "Pengungsi per Minggu", "#8b5cf6")]
+            series = ["rumah_terdampak", "korban_jiwa", "pengungsi"]
         elif tipe == "Bencana Alam Lainnya":
-            series = [("rumah_terdampak", "Rumah Terdampak per Minggu", "#0d9488"),
-                      ("korban_jiwa", "Korban Jiwa per Minggu", "#f97316"),
-                      ("pengungsi", "Pengungsi per Minggu", "#8b5cf6")]
+            series = ["rumah_terdampak", "pengungsi", "korban_jiwa"]
         else:
-            series = default_series
-        c1, c2, c3 = st.columns(3)
-        for col, (y, title, color) in zip([c1, c2, c3], series):
+            series = ["luas_ha", "korban_jiwa", "ispa"]
+
+        cols = st.columns(len(series))
+        for col, metric in zip(cols, series):
             with col, st.container(border=True):
-                theme.panel_title(title)
-                if y not in w.columns:
+                theme.panel_title(f"{METRIK_LABEL.get(metric, metric)}", f"(tren {granularity})")
+                if metric not in w.columns:
                     st.caption("Tidak ada data.")
                     continue
-                fig = px.line(w, x="minggu", y=y, markers=True, color_discrete_sequence=[color])
-                fig.update_xaxes(title=None)
-                fig.update_yaxes(title=None)
-                show(style(fig, 240, legend=False))
+                vals = w[metric].fillna(0)
+                if vals.sum() == 0:
+                    st.caption("Belum ada nilai pada metrik ini.")
+                    continue
+                show(tren_bar(w["label"], vals, METRIK_COLOR.get(metric, "#2563eb"), metric, height=260))
     with t3:
         st.markdown("**Data kejadian (sesuai filter)**")
         show_df(bersihkan(cur), height=360)
@@ -868,7 +931,8 @@ elif page == "Peta Sebaran":
                 with st.container(border=True):
                     theme.panel_title("Tren Hotspot Harian")
                     g = hs_f.groupby(hs_f["tanggal"].dt.normalize()).size().reset_index(name="hotspot")
-                    fig = px.area(g, x="tanggal", y="hotspot", color_discrete_sequence=["#2563eb"])
+                    fig = px.area(g, x="tanggal", y="hotspot",
+                                  color_discrete_sequence=[METRIK_COLOR["hotspot"]])
                     fig.update_xaxes(title=None)
                     fig.update_yaxes(title=None)
                     show(style(fig, 280, legend=False))
@@ -946,10 +1010,10 @@ elif page == "Rekap Wilayah":
                 fig.update_yaxes(title=None)
                 show(style(fig, 300, legend=False))
         else:
-            # Filter spesifik → ganti pie/bar 1-batang dengan tren bulanan kejadian jenis itu di provinsi
-            if days is None or days > 90:
+            # Filter spesifik → tren kejadian jenis itu di provinsi (threshold konsisten 30/7 hari)
+            if days is None or days > 30:
                 freq, label_fmt, granularity = "M", "%b %Y", "bulanan"
-            elif days > 14:
+            elif days > 7:
                 freq, label_fmt, granularity = "W", "%d %b", "mingguan"
             else:
                 freq, label_fmt, granularity = "D", "%d %b", "harian"
@@ -961,17 +1025,7 @@ elif page == "Rekap Wilayah":
                 dd["grp"] = dd["tanggal"].dt.to_period(freq).dt.start_time
                 g = dd.groupby("grp").size().reset_index(name="kejadian")
                 g["label"] = g["grp"].dt.strftime(label_fmt)
-                warna = TIPE_COLOR.get(tipe, "#2563eb")
-                fig = go.Figure()
-                fig.add_trace(go.Bar(x=g["label"], y=g["kejadian"], marker_color=warna, opacity=0.85,
-                                     text=g["kejadian"], textposition="outside", cliponaxis=False,
-                                     hovertemplate="%{x}<br>%{y} kejadian<extra></extra>"))
-                fig.add_trace(go.Scatter(x=g["label"], y=g["kejadian"], mode="lines+markers",
-                                         line=dict(color=warna, width=2),
-                                         marker=dict(size=7, color=warna), showlegend=False, hoverinfo="skip"))
-                fig.update_xaxes(title=None, type="category", tickangle=-30, tickfont_size=10)
-                fig.update_yaxes(title=None)
-                show(style(fig, 300, legend=False))
+                show(tren_bar(g["label"], list(g["kejadian"]), METRIK_COLOR["kejadian"], "kejadian", height=300))
 
     with b, st.container(border=True):
         theme.panel_title(f"Kabupaten/Kota - {pilih}")
