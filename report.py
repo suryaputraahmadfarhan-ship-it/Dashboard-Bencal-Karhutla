@@ -1,94 +1,121 @@
 # -*- coding: utf-8 -*-
-"""Pembuat laporan: Word (.docx) format Intel Brief Direktorat 2.3, dan Excel multi-sheet.
+"""Pembuat laporan Word (.docx) format Intel Brief Direktorat 2.3.
 
-Format mengikuti contoh pimpinan: Header → LAMPIRAN → INDIKASI (per provinsi: Perkembangan /
-Dampak / Upaya Pemerintah / Penindakan) → ANALISIS → DAMPAK → UPAYA → SARAN TINDAK → Autentikasi.
+Mengikuti format pimpinan: Header → LAMPIRAN → INDIKASI (per provinsi: Perkembangan /
+Dampak / Upaya Pemerintah / Penindakan) → ANALISIS → DAMPAK → UPAYA → SARAN TINDAK →
+Autentikasi. Penomoran berjenjang: 1. / a. / 1) / a).
 """
 import io
 
 import pandas as pd
 from docx import Document
-from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from data_utils import fmt_num, tgl_id
+from data_utils import fmt_num
 
 NAVY = RGBColor(0x0F, 0x2A, 0x5C)
+ABU = RGBColor(0x47, 0x55, 0x69)
+
+INDENTS = [Cm(0), Cm(0.75), Cm(1.5), Cm(2.25), Cm(3.0)]
 
 
-# ============================================================= util
-def _shade(cell, hex_fill):
-    tcPr = cell._tc.get_or_add_tcPr()
-    shd = OxmlElement("w:shd")
-    shd.set(qn("w:val"), "clear")
-    shd.set(qn("w:color"), "auto")
-    shd.set(qn("w:fill"), hex_fill)
-    tcPr.append(shd)
-
-
-def _table(doc, header, rows, widths=None, num_cols=()):
-    t = doc.add_table(rows=1, cols=len(header))
-    t.style = "Table Grid"
-    t.alignment = WD_TABLE_ALIGNMENT.CENTER
-    for i, h in enumerate(header):
-        c = t.rows[0].cells[i]
-        c.text = ""
-        r = c.paragraphs[0].add_run(h)
-        r.bold = True
-        r.font.size = Pt(10)
-        r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-        _shade(c, "12307A")
-    for row in rows:
-        cells = t.add_row().cells
-        for i, v in enumerate(row):
-            cells[i].text = ""
-            p = cells[i].paragraphs[0]
-            run = p.add_run(str(v))
-            run.font.size = Pt(10)
-            if i in num_cols:
-                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    if widths:
-        for row in t.rows:
-            for i, w in enumerate(widths):
-                row.cells[i].width = Cm(w)
-    return t
-
-
-def _ambang(doc, teks, bold=False, italic=False, size=11, color=None, indent=0, after=0):
+# ============================================================= util paragraf
+def _p(doc, teks="", bold=False, italic=False, size=11, color=None, align=None,
+       indent_lv=0, space_after=4, space_before=0, hanging=None):
     p = doc.add_paragraph()
-    p.paragraph_format.left_indent = Cm(indent) if indent else None
-    p.paragraph_format.space_after = Pt(after)
-    r = p.add_run(teks)
-    r.bold = bold
-    r.italic = italic
-    r.font.size = Pt(size)
-    if color is not None:
-        r.font.color.rgb = color
+    p.paragraph_format.left_indent = INDENTS[min(indent_lv, len(INDENTS) - 1)]
+    if hanging is not None:
+        p.paragraph_format.first_line_indent = Cm(-hanging)
+    p.paragraph_format.space_after = Pt(space_after)
+    p.paragraph_format.space_before = Pt(space_before)
+    if align is not None:
+        p.alignment = align
+    if teks:
+        r = p.add_run(teks)
+        r.bold = bold
+        r.italic = italic
+        r.font.size = Pt(size)
+        if color is not None:
+            r.font.color.rgb = color
     return p
 
 
-def _bullet(doc, teks, level=0):
-    p = doc.add_paragraph(teks, style="List Bullet")
-    p.paragraph_format.left_indent = Cm(0.75 + 0.5 * level)
-    for r in p.runs:
-        r.font.size = Pt(11)
-    return p
-
-
-def _label_isi(doc, label, isi, indent=1.0):
-    """Baris 'Label: isi.' dengan label bold."""
+def _label_isi(doc, nomor, label, isi, indent_lv=3):
+    """Paragraf nomor + label bold + isi normal. Contoh: '1) Perkembangan: ...'"""
     p = doc.add_paragraph()
-    p.paragraph_format.left_indent = Cm(indent)
-    p.paragraph_format.space_after = Pt(2)
+    p.paragraph_format.left_indent = INDENTS[indent_lv]
+    p.paragraph_format.first_line_indent = Cm(-0.75)
+    p.paragraph_format.space_after = Pt(3)
+    r = p.add_run(f"{nomor} ")
+    r.bold = True
+    r.font.size = Pt(11)
     rl = p.add_run(f"{label}: ")
     rl.bold = True
     rl.font.size = Pt(11)
     ri = p.add_run(isi)
     ri.font.size = Pt(11)
     return p
+
+
+def _section(doc, nomor, judul):
+    """Judul section level-1 seperti '1. INDIKASI' (bold, uppercase, navy)."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(10)
+    p.paragraph_format.space_after = Pt(6)
+    r = p.add_run(f"{nomor}. {judul}")
+    r.bold = True
+    r.font.size = Pt(13)
+    r.font.color.rgb = NAVY
+
+
+def _subsection(doc, nomor, judul, indent_lv=1):
+    """Sub-section seperti 'a. Provinsi Aceh' atau 'A. Karhutla'."""
+    p = doc.add_paragraph()
+    p.paragraph_format.left_indent = INDENTS[indent_lv]
+    p.paragraph_format.first_line_indent = Cm(-0.5)
+    p.paragraph_format.space_before = Pt(6)
+    p.paragraph_format.space_after = Pt(4)
+    r = p.add_run(f"{nomor} ")
+    r.bold = True
+    r.font.size = Pt(12)
+    rj = p.add_run(judul)
+    rj.bold = True
+    rj.font.size = Pt(12)
+    rj.font.color.rgb = NAVY
+
+
+def _item_abjad(doc, nomor, teks, indent_lv=1):
+    """Butir 'a. Berpotensi terjadi...' untuk DAMPAK/UPAYA/SARAN TINDAK."""
+    p = doc.add_paragraph()
+    p.paragraph_format.left_indent = INDENTS[indent_lv]
+    p.paragraph_format.first_line_indent = Cm(-0.6)
+    p.paragraph_format.space_after = Pt(3)
+    r = p.add_run(f"{nomor} ")
+    r.bold = True
+    r.font.size = Pt(11)
+    ri = p.add_run(teks)
+    ri.font.size = Pt(11)
+    return p
+
+
+def _abjad(i):
+    """0 -> 'a.', 1 -> 'b.', ..."""
+    return f"{chr(ord('a') + i)}."
+
+
+def _abjad_tutup(i):
+    """0 -> 'a)', 1 -> 'b)'..."""
+    return f"{chr(ord('a') + i)})"
+
+
+def _ABJAD(i):
+    """0 -> 'A.', 1 -> 'B.' ..."""
+    return f"{chr(ord('A') + i)}."
+
+
+def _angka_tutup(i):
+    return f"{i + 1})"
 
 
 # ============================================================= header & footer
@@ -100,10 +127,10 @@ def _header(doc, ctx):
     st.font.name = "Calibri"
     st.font.size = Pt(11)
 
-    _ambang(doc, "BADAN INTELIJEN NEGARA", bold=True, size=12, color=NAVY, after=0)
-    _ambang(doc, "DIREKTORAT 23", bold=True, size=12, color=NAVY, indent=1.0, after=4)
-    doc.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.paragraphs[1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _p(doc, "BADAN INTELIJEN NEGARA", bold=True, size=12, color=NAVY,
+       align=WD_ALIGN_PARAGRAPH.CENTER, space_after=0)
+    _p(doc, "DIREKTORAT 23", bold=True, size=12, color=NAVY,
+       align=WD_ALIGN_PARAGRAPH.CENTER, space_after=6)
 
     jenis = ctx.get("jenis", "Semua")
     judul_map = {
@@ -113,39 +140,36 @@ def _header(doc, ctx):
         "Gempa": "LAPORAN GEMPA DI WILAYAH SUMATERA DAN KALIMANTAN",
         "Bencana Alam Lainnya": "LAPORAN BENCANA ALAM LAINNYA DI WILAYAH SUMATERA DAN KALIMANTAN",
     }
-    h = doc.add_paragraph()
-    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = h.add_run(judul_map.get(jenis, f"LAPORAN {jenis.upper()} DI WILAYAH SUMATERA DAN KALIMANTAN"))
-    r.bold = True
-    r.font.size = Pt(14)
-    r.font.color.rgb = NAVY
+    _p(doc, judul_map.get(jenis, f"LAPORAN {jenis.upper()} DI WILAYAH SUMATERA DAN KALIMANTAN"),
+       bold=True, size=14, color=NAVY, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=4, space_after=6)
 
-    # Keterangan periode & tanggal data
-    _ambang(doc, f"Periode: {ctx['periode']}   ·   Data per: {ctx['data_per']}   ·   "
-                 f"Wilayah: {ctx['wilayah']}", italic=True, size=10, after=10)
-    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _p(doc, f"Periode: {ctx['periode']}   ·   Data per: {ctx['data_per']}   ·   "
+            f"Wilayah: {ctx['wilayah']}",
+       italic=True, size=10, color=ABU, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=10)
 
     if ctx.get("demo"):
-        _ambang(doc, "Catatan: dokumen ini dibuat dari DATA DEMO (sintetis), bukan data riil.",
-                bold=True, size=10, color=RGBColor(0xB4, 0x53, 0x09))
+        _p(doc, "Catatan: dokumen ini dibuat dari DATA DEMO (sintetis), bukan data riil.",
+           bold=True, size=10, color=RGBColor(0xB4, 0x53, 0x09), align=WD_ALIGN_PARAGRAPH.CENTER,
+           space_after=8)
 
-    _ambang(doc, "LAMPIRAN :", bold=True, size=12, color=NAVY, after=4)
+    _p(doc, "LAMPIRAN :", bold=True, size=12, color=NAVY, space_before=4, space_after=6)
 
 
 def _autentikasi(doc, ctx):
-    doc.add_paragraph()
-    _ambang(doc, "Autentikasi :", bold=True, size=11, color=NAVY, after=2)
-    _ambang(doc, f"Disusun oleh: {ctx.get('pembuat', '-')}", size=10, after=0)
-    _ambang(doc, "Diverifikasi oleh: Kabag TU Direktorat 2.3 (_______________________)", size=10, after=0)
-    _ambang(doc, "Disetujui oleh: Direktur 2.3 Deputi 2 BIN (_______________________)", size=10, after=10)
-    _ambang(doc, "Dokumen ini dihasilkan otomatis dari Dashboard Kebencanaan Direktorat 2.3 "
-                 "dan perlu diverifikasi petugas sebelum disampaikan ke pimpinan.",
-            italic=True, size=9)
+    _p(doc, "", space_before=14)
+    _p(doc, "Autentikasi :", bold=True, size=11, color=NAVY, space_after=4)
+    _p(doc, f"Disusun oleh: {ctx.get('pembuat', '-')}", size=10, indent_lv=1, space_after=2)
+    _p(doc, "Diverifikasi oleh: Kabag TU Direktorat 2.3 (_______________________)",
+       size=10, indent_lv=1, space_after=2)
+    _p(doc, "Disetujui oleh: Direktur 2.3 Deputi 2 BIN (_______________________)",
+       size=10, indent_lv=1, space_after=10)
+    _p(doc, "Dokumen ini dihasilkan otomatis dari Dashboard Kebencanaan Direktorat 2.3 "
+            "dan perlu diverifikasi petugas sebelum disampaikan ke pimpinan.",
+       italic=True, size=9, color=ABU)
 
 
-# ============================================================= generator deskripsi per provinsi
+# ============================================================= deskripsi per provinsi
 def _desc_perkembangan(prov, jenis, g, hs_prov):
-    """Narasi 'Perkembangan' untuk provinsi tertentu, basis dari data agregat `g` (DataFrame baris per provinsi)."""
     n = int(g["kejadian"].iloc[0]) if len(g) else 0
     kabs = g.get("daftar_kabupaten", pd.Series([""])).iloc[0] if "daftar_kabupaten" in g.columns else ""
     jml_kab = int(g.get("jml_kab", pd.Series([0])).iloc[0]) if "jml_kab" in g.columns else 0
@@ -161,8 +185,8 @@ def _desc_perkembangan(prov, jenis, g, hs_prov):
         s += "."
         bits.append(s)
         if hs_prov is not None and hs_prov > 0:
-            bits.append(f"Pada data pantauan satelit terakhir, tercatat {fmt_num(hs_prov)} titik hotspot di "
-                        f"wilayah {prov}.")
+            bits.append(f"Pada data pantauan satelit terakhir, tercatat {fmt_num(hs_prov)} titik hotspot "
+                        f"di wilayah {prov}.")
     elif jenis == "Banjir":
         rt = int(g.get("rumah_terdampak", pd.Series([0])).iloc[0] or 0)
         tg = float(g.get("tinggi_genangan_cm", pd.Series([0])).iloc[0] or 0)
@@ -195,7 +219,7 @@ def _desc_perkembangan(prov, jenis, g, hs_prov):
         bits.append(s)
         if rt:
             bits.append(f"Teridentifikasi {fmt_num(rt)} rumah terdampak akibat guncangan.")
-    else:  # Bencana Alam Lainnya
+    else:
         rt = int(g.get("rumah_terdampak", pd.Series([0])).iloc[0] or 0)
         s = f"Tercatat {fmt_num(n)} kejadian bencana alam lainnya"
         if jml_kab:
@@ -281,7 +305,8 @@ def _penindakan(jenis):
                      "cara dibakar. Penegakan hukum terus dioptimalkan oleh Polda setempat bersama KLHK "
                      "melalui penyelidikan sumber api dan penyegelan konsesi yang terbakar."),
         "Banjir": ("Investigasi penyebab banjir mencakup pemeriksaan kondisi tata ruang, drainase, serta "
-                   "potensi pelanggaran alih fungsi lahan dan aktivitas yang mengganggu daerah tangkapan air."),
+                   "potensi pelanggaran alih fungsi lahan dan aktivitas yang mengganggu daerah tangkapan "
+                   "air."),
         "Gempa": ("Fokus penanganan pada rehabilitasi sarana vital dan verifikasi standar bangunan tahan "
                   "gempa; pendalaman dilakukan terkait kesesuaian konstruksi di daerah terdampak."),
         "Bencana Alam Lainnya": ("Pendalaman penyebab diperlukan untuk memetakan apakah terdapat unsur "
@@ -290,17 +315,18 @@ def _penindakan(jenis):
     return base.get(jenis, base["Bencana Alam Lainnya"])
 
 
-# ============================================================= templat ANALISIS / DAMPAK / UPAYA / SARAN
+# ============================================================= ANALISIS / DAMPAK / UPAYA / SARAN
 def _analisis(jenis, ctx):
-    cur_total = sum(int(r.kejadian) for r in ctx["per_prov_full"].itertuples())
-    ispa_total = int(ctx["per_prov_full"]["ispa"].sum()) if "ispa" in ctx["per_prov_full"].columns else 0
-    kj_total = int(ctx["per_prov_full"]["korban_jiwa"].sum()) if "korban_jiwa" in ctx["per_prov_full"].columns else 0
+    pp = ctx.get("per_prov_full")
+    cur_total = int(pp["kejadian"].sum()) if (pp is not None and len(pp)) else 0
+    ispa_total = int(pp["ispa"].sum()) if (pp is not None and "ispa" in pp.columns) else 0
+    kj_total = int(pp["korban_jiwa"].sum()) if (pp is not None and "korban_jiwa" in pp.columns) else 0
     teks = []
     if jenis == "Karhutla":
-        teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian karhutla di "
-                    f"wilayah {ctx['wilayah']}. Penanganan menjadi perhatian pemerintah pusat dan daerah "
-                    "melalui penetapan status siaga/tanggap darurat, pembentukan satgas, penguatan "
-                    "koordinasi lintas sektor, serta dukungan anggaran dan peralatan.")
+        teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian karhutla "
+                    f"di wilayah {ctx['wilayah']}. Penanganan karhutla menjadi perhatian pemerintah pusat "
+                    "dan daerah melalui penetapan status siaga/tanggap darurat, pembentukan satgas, "
+                    "penguatan koordinasi lintas sektor, serta dukungan anggaran dan peralatan.")
         teks.append("Karhutla berpotensi menimbulkan dampak ekonomi dan sosial melalui kerusakan lahan "
                     "pertanian, perkebunan dan kehutanan, terganggunya transportasi, distribusi barang "
                     "dan aktivitas masyarakat, serta meningkatnya risiko gangguan kesehatan terutama "
@@ -311,17 +337,17 @@ def _analisis(jenis, ctx):
                         "Rating System (FDRS), patroli udara, helikopter water bombing, Operasi Modifikasi "
                         "Cuaca (OMC) dan pemantauan kualitas udara dioptimalkan.")
     elif jenis == "Banjir":
-        teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian banjir di "
-                    f"wilayah {ctx['wilayah']}. Pola kejadian menunjukkan keterkaitan dengan curah hujan "
-                    "ekstrem, luapan sungai, serta tingkat kesiapsiagaan infrastruktur drainase.")
+        teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian banjir "
+                    f"di wilayah {ctx['wilayah']}. Pola kejadian menunjukkan keterkaitan dengan curah "
+                    "hujan ekstrem, luapan sungai, serta tingkat kesiapsiagaan infrastruktur drainase.")
         teks.append("Banjir berdampak pada mobilitas warga, kerusakan rumah dan sarana publik, serta "
                     "potensi gangguan distribusi logistik di wilayah terdampak.")
         if kj_total:
             teks.append(f"Dilaporkan {fmt_num(kj_total)} korban jiwa pada periode ini; evaluasi "
                         "kesiapsiagaan dan respons darurat perlu diperkuat.")
     elif jenis == "Gempa":
-        teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian gempa di "
-                    f"wilayah {ctx['wilayah']}. Pola kedalaman dan magnitudo menjadi indikator utama "
+        teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian gempa "
+                    f"di wilayah {ctx['wilayah']}. Pola kedalaman dan magnitudo menjadi indikator utama "
                     "untuk menakar risiko kerusakan dan korban.")
         teks.append("Dampak gempa mencakup kerusakan bangunan, gangguan aktivitas ekonomi, dan risiko "
                     "gempa susulan yang memerlukan kesiapan evakuasi berkelanjutan.")
@@ -331,7 +357,7 @@ def _analisis(jenis, ctx):
                     "berkaitan dengan kondisi cuaca ekstrem dan karakteristik topografi wilayah.")
         teks.append("Pemetaan daerah rawan, penguatan sistem peringatan dini, dan edukasi masyarakat "
                     "menjadi kunci mitigasi risiko ke depan.")
-    else:  # Semua
+    else:
         teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian bencana "
                     f"(seluruh jenis) di wilayah {ctx['wilayah']}. Karhutla, banjir, gempa, dan bencana "
                     "lainnya menunjukkan pola yang bervariasi antarwilayah dan memerlukan pendekatan "
@@ -345,22 +371,22 @@ def _analisis(jenis, ctx):
 def _dampak_potensial(jenis):
     base_karhutla = [
         "Berpotensi terjadi penurunan kualitas udara yang lebih luas akibat sebaran asap karhutla, "
-        "termasuk hingga wilayah Kepri dan negara tetangga, yang dapat mengganggu kesehatan dan aktivitas "
-        "masyarakat.",
-        "Berpotensi terjadi gangguan transportasi udara akibat menurunnya visibility di sejumlah bandara "
-        "utama di Sumatera dan Kalimantan.",
-        "Berpotensi terjadi gangguan transportasi laut dan perairan akibat menurunnya jarak pandang, yang "
-        "dapat menghambat aktivitas nelayan, pelayaran dan distribusi barang antarwilayah.",
+        "termasuk hingga wilayah Kepri dan negara tetangga, yang dapat mengganggu kesehatan dan "
+        "aktivitas masyarakat.",
+        "Berpotensi terjadi gangguan transportasi udara akibat menurunnya visibility di sejumlah "
+        "bandara utama di Sumatera dan Kalimantan.",
+        "Berpotensi terjadi gangguan transportasi laut dan perairan akibat menurunnya jarak pandang, "
+        "yang dapat menghambat aktivitas nelayan, pelayaran dan distribusi barang antarwilayah.",
         "Berpotensi terjadi peningkatan gangguan kesehatan masyarakat akibat paparan asap, terutama "
         "kelompok rentan, seiring meningkatnya kasus ISPA di wilayah terdampak.",
-        "Berpotensi terjadi gangguan kegiatan pendidikan akibat kualitas udara yang tidak sehat, berupa "
-        "penerapan BDR/PJJ dan pembatasan aktivitas luar ruangan di sejumlah wilayah.",
+        "Berpotensi terjadi gangguan kegiatan pendidikan akibat kualitas udara yang tidak sehat, "
+        "berupa penerapan BDR/PJJ dan pembatasan aktivitas luar ruangan di sejumlah wilayah.",
         "Berpotensi terjadi kerugian ekonomi akibat terganggunya aktivitas perkebunan, pertanian, "
         "perdagangan, distribusi barang dan mobilitas masyarakat.",
-        "Berpotensi terjadi kerusakan ekosistem akibat kebakaran berulang pada lahan gambut, perkebunan "
-        "dan kawasan hutan, termasuk kawasan konservasi.",
-        "Berpotensi meningkatkan keresahan masyarakat dan tuntutan terhadap pemerintah terkait penanganan "
-        "karhutla apabila kebakaran dan dampaknya berlangsung berkepanjangan.",
+        "Berpotensi terjadi kerusakan ekosistem akibat kebakaran berulang pada lahan gambut, "
+        "perkebunan dan kawasan hutan, termasuk kawasan konservasi.",
+        "Berpotensi meningkatkan keresahan masyarakat dan tuntutan terhadap pemerintah terkait "
+        "penanganan karhutla apabila kebakaran dan dampaknya berlangsung berkepanjangan.",
     ]
     base_banjir = [
         "Berpotensi terjadi perluasan wilayah terdampak banjir seiring kondisi curah hujan ekstrem dan "
@@ -371,15 +397,18 @@ def _dampak_potensial(jenis):
         "antarwilayah.",
         "Berpotensi terjadi peningkatan penyakit menular pasca-banjir (diare, DBD, leptospirosis) di "
         "wilayah terdampak.",
-        "Berpotensi terjadi keresahan sosial akibat lambatnya penanganan pengungsi dan distribusi bantuan.",
-        "Berpotensi terjadi kerugian pertanian/perikanan akibat lahan tergenang dan rusaknya tambak/kolam.",
+        "Berpotensi terjadi keresahan sosial akibat lambatnya penanganan pengungsi dan distribusi "
+        "bantuan.",
+        "Berpotensi terjadi kerugian pertanian/perikanan akibat lahan tergenang dan rusaknya "
+        "tambak/kolam.",
     ]
     base_gempa = [
         "Berpotensi terjadi gempa susulan dengan skala yang dapat memperparah kerusakan bangunan rentan.",
         "Berpotensi terjadi kerusakan bangunan publik (sekolah, rumah sakit, pasar) yang mengganggu "
         "pelayanan masyarakat.",
         "Berpotensi terjadi kerugian ekonomi akibat terhentinya aktivitas produksi, perdagangan dan jasa.",
-        "Berpotensi terjadi trauma psikis pada masyarakat terdampak yang memerlukan dukungan kesehatan jiwa.",
+        "Berpotensi terjadi trauma psikis pada masyarakat terdampak yang memerlukan dukungan kesehatan "
+        "jiwa.",
         "Berpotensi terjadi keresahan masyarakat terkait kualitas konstruksi bangunan di daerah rawan.",
     ]
     base_lain = [
@@ -396,35 +425,34 @@ def _dampak_potensial(jenis):
     }.get(jenis, base_lain)
 
 
-def _upaya(jenis):
-    """Daftar langkah 'UPAYA' — Deputi II memerintahkan Kabinda Wilayah Sumakal untuk..."""
-    jenis_text = {"Karhutla": "karhutla", "Banjir": "banjir", "Gempa": "gempa",
-                  "Bencana Alam Lainnya": "bencana alam lainnya"}.get(jenis, "kebencanaan")
+def _upaya_butir(jenis):
+    jt = {"Karhutla": "karhutla", "Banjir": "banjir", "Gempa": "gempa",
+          "Bencana Alam Lainnya": "bencana alam lainnya"}.get(jenis, "kebencanaan")
     langkah = [
         f"Melakukan monitoring, pendalaman dan pemetaan wilayah rawan, kejadian berulang, pola sebaran, "
-        f"serta dampak kesehatan terkait {jenis_text} sebagai bahan deteksi dan peringatan dini.",
-        "Berkoordinasi dengan BPBD, BMKG, TNI/Polri, Pemda dan dinas terkait untuk memperkuat pemantauan, "
-        "patroli, kesiapsiagaan personel/peralatan serta penanganan di lapangan.",
+        f"serta dampak kesehatan terkait {jt} sebagai bahan deteksi dan peringatan dini.",
+        "Berkoordinasi dengan BPBD, BMKG, TNI/Polri, Pemda dan dinas terkait untuk memperkuat "
+        "pemantauan, patroli, kesiapsiagaan personel/peralatan serta penanganan di lapangan.",
         f"Berkoordinasi dengan Pemda dan sektor swasta terkait untuk meningkatkan kesiapsiagaan, sarana "
-        f"prasarana, patroli pencegahan dan dukungan penanganan {jenis_text} serta mendorong penegakan "
-        "hukum sesuai peraturan yang berlaku.",
+        f"prasarana, patroli pencegahan dan dukungan penanganan {jt} serta mendorong penegakan hukum "
+        "sesuai peraturan yang berlaku.",
         "Melakukan pendalaman terhadap sumber dan indikasi penyebab, kepemilikan lahan/aset, pola "
         "kejadian berulang serta perkembangan penindakan hukum guna memperkuat deteksi dan cegah dini.",
         "Melakukan penggalangan tokoh masyarakat, tokoh adat, dan komunitas relawan untuk memperkuat "
         "edukasi, pencegahan, pelaporan dini dan partisipasi masyarakat.",
         "Melakukan peninjauan lapangan dan menyiagakan tim respons cepat untuk edukasi masyarakat serta "
         "pelaporan dini.",
-        "Berkoordinasi dengan media massa untuk memperkuat publikasi informasi secara cepat, faktual dan "
-        "berimbang serta mengantisipasi berkembangnya narasi negatif.",
+        "Berkoordinasi dengan media massa untuk memperkuat publikasi informasi secara cepat, faktual "
+        "dan berimbang serta mengantisipasi berkembangnya narasi negatif.",
         "Melakukan patroli siber terhadap hoaks dan narasi provokasi, serta melaksanakan amplifikasi "
-        f"narasi positif terkait penanganan {jenis_text}.",
+        f"narasi positif terkait penanganan {jt}.",
     ]
     if jenis == "Karhutla":
         langkah.insert(0, "Melakukan monitoring dan pendalaman perkembangan hotspot, titik api, kualitas "
                        "udara, serta kasus ISPA sebagai bahan deteksi dan peringatan dini.")
     elif jenis == "Banjir":
-        langkah.insert(0, "Melakukan monitoring kondisi sungai, curah hujan, dan titik rawan banjir sebagai "
-                       "bahan deteksi dan peringatan dini.")
+        langkah.insert(0, "Melakukan monitoring kondisi sungai, curah hujan, dan titik rawan banjir "
+                       "sebagai bahan deteksi dan peringatan dini.")
     elif jenis == "Gempa":
         langkah.insert(0, "Melakukan monitoring aktivitas seismik, gempa susulan, dan kondisi bangunan "
                        "vital di wilayah terdampak sebagai bahan deteksi dan peringatan dini.")
@@ -445,9 +473,9 @@ def _saran_tindak(jenis):
             "dan percepatan pemadaman.",
             "BNPB/BPBD bersama TNI-Polri memastikan kesiapan personel dan sarana pemadaman, termasuk "
             "ketersediaan sumber air dan akses menuju lokasi rawan, terutama pada wilayah gambut.",
-            "Instansi Kesehatan meningkatkan pemantauan kualitas udara dan kondisi kesehatan masyarakat "
-            "di wilayah terdampak karhutla serta memperkuat penyampaian peringatan kesehatan sebagai "
-            "langkah mitigasi.",
+            "Instansi Kesehatan meningkatkan pemantauan kualitas udara dan kondisi kesehatan "
+            "masyarakat di wilayah terdampak karhutla serta memperkuat penyampaian peringatan "
+            "kesehatan sebagai langkah mitigasi.",
             "Instansi Pendidikan bersama Pemerintah Daerah menyiapkan langkah penyesuaian kegiatan "
             "belajar mengajar pada wilayah terdampak kabut asap, termasuk penerapan pembelajaran "
             "jarak jauh apabila diperlukan.",
@@ -460,8 +488,8 @@ def _saran_tindak(jenis):
             "wilayah rawan banjir yang teridentifikasi dari pola kejadian berulang.",
             "Pemerintah Daerah memperkuat Early Warning System (EWS) banjir berbasis komunitas, "
             "menyiapkan jalur dan titik evakuasi, serta memperkuat sosialisasi tanggap bencana.",
-            "BNPB/BPBD bersama TNI-Polri memastikan kesiapan personel, perahu karet, dapur umum, dan "
-            "logistik darurat di titik rawan banjir.",
+            "BNPB/BPBD bersama TNI-Polri memastikan kesiapan personel, perahu karet, dapur umum, "
+            "dan logistik darurat di titik rawan banjir.",
             "Instansi Kesehatan mempersiapkan posko kesehatan dan stok obat untuk mengantisipasi "
             "penyakit pasca-banjir (diare, DBD, leptospirosis).",
             "Kementerian LHK mengevaluasi tata guna lahan dan alih fungsi kawasan hulu sebagai bagian "
@@ -498,9 +526,8 @@ def _saran_tindak(jenis):
     return saran.get(jenis, saran["Bencana Alam Lainnya"])
 
 
-# ============================================================= bangun INDIKASI per provinsi
-def _bangun_perprovinsi_agg(ctx, df_cur, hs_today_df):
-    """Hitung agregasi per provinsi + daftar kabupaten + hotspot (untuk Perkembangan/Dampak)."""
+# ============================================================= agregasi per provinsi
+def _bangun_perprovinsi_agg(df_cur, hs_today_df):
     if df_cur is None or df_cur.empty:
         return pd.DataFrame()
     g = df_cur.groupby("provinsi").agg(
@@ -534,71 +561,78 @@ def _bangun_perprovinsi_agg(ctx, df_cur, hs_today_df):
     return g
 
 
+def _tulis_indikasi_provinsi(doc, prov_df, jenis, indent_prov_lv, indent_item_lv, mulai_abjad=0):
+    """Tulis blok INDIKASI per provinsi dengan penomoran a./b./c. dan sub 1)/2)/3)/4)."""
+    for i, r in enumerate(prov_df.itertuples()):
+        g_row = prov_df[prov_df["provinsi"] == r.provinsi]
+        nomor_prov = _abjad(i + mulai_abjad) if indent_prov_lv == 1 else _angka_tutup(i + mulai_abjad)
+        _subsection(doc, nomor_prov, f"Provinsi {r.provinsi}", indent_lv=indent_prov_lv)
+        hs_raw = getattr(r, "hotspot", 0)
+        hs_v = 0 if hs_raw is None or (isinstance(hs_raw, float) and pd.isna(hs_raw)) else int(hs_raw)
+        _label_isi(doc, "1)", "Perkembangan", _desc_perkembangan(r.provinsi, jenis, g_row, hs_v),
+                   indent_lv=indent_item_lv)
+        _label_isi(doc, "2)", "Dampak", _desc_dampak(r.provinsi, jenis, g_row), indent_lv=indent_item_lv)
+        _label_isi(doc, "3)", "Upaya Pemerintah", _upaya_pemerintah(jenis), indent_lv=indent_item_lv)
+        _label_isi(doc, "4)", "Penindakan", _penindakan(jenis), indent_lv=indent_item_lv)
+
+
 # ============================================================= main entry
 def build_docx(ctx):
-    """Bangun laporan intel brief Direktorat 2.3 dari ctx."""
     doc = Document()
     _header(doc, ctx)
 
     jenis = ctx.get("jenis", "Semua")
-    df_cur = ctx.get("df_cur")  # DataFrame kejadian untuk periode & jenis terpilih
+    df_cur = ctx.get("df_cur")
     hs_today_df = ctx.get("hs_today_df")
 
-    # 1. INDIKASI
-    _ambang(doc, "INDIKASI", bold=True, size=12, color=NAVY, after=4)
-    pp = _bangun_perprovinsi_agg(ctx, df_cur, hs_today_df)
+    # ---------- 1. INDIKASI ----------
+    _section(doc, 1, "INDIKASI")
+    pp = _bangun_perprovinsi_agg(df_cur, hs_today_df)
     if pp.empty:
-        _ambang(doc, "Tidak terdapat data kejadian pada periode dan filter yang dipilih.", indent=1.0)
+        _p(doc, "Tidak terdapat data kejadian pada periode dan filter yang dipilih.", indent_lv=1)
     elif jenis == "Semua":
-        # Gabungan: susun per JENIS → per PROVINSI
-        for tp in ["Karhutla", "Banjir", "Gempa", "Bencana Alam Lainnya"]:
-            df_tp = df_cur[df_cur["tipe_bencana"] == tp] if df_cur is not None else None
-            if df_tp is None or df_tp.empty:
-                continue
-            pp_tp = _bangun_perprovinsi_agg(ctx, df_tp, hs_today_df if tp == "Karhutla" else None)
-            _ambang(doc, f"A. {tp}", bold=True, size=11, color=NAVY, indent=0.75, after=2)
-            for r in pp_tp.itertuples():
+        # Gabungan: a. Karhutla → 1) Provinsi Aceh → a) Perkembangan: ...
+        jenis_urut = [t for t in ["Karhutla", "Banjir", "Gempa", "Bencana Alam Lainnya"]
+                      if df_cur is not None and t in df_cur["tipe_bencana"].values]
+        for i, tp in enumerate(jenis_urut):
+            df_tp = df_cur[df_cur["tipe_bencana"] == tp]
+            pp_tp = _bangun_perprovinsi_agg(df_tp, hs_today_df if tp == "Karhutla" else None)
+            _subsection(doc, _abjad(i), tp, indent_lv=1)
+            for j, r in enumerate(pp_tp.itertuples()):
                 g_row = pp_tp[pp_tp["provinsi"] == r.provinsi]
-                _ambang(doc, f"Provinsi {r.provinsi}", bold=True, size=11, indent=1.0, after=2)
-                hs_v = int(getattr(r, "hotspot", 0) or 0)
-                _label_isi(doc, "Perkembangan", _desc_perkembangan(r.provinsi, tp, g_row, hs_v), indent=1.5)
-                _label_isi(doc, "Dampak", _desc_dampak(r.provinsi, tp, g_row), indent=1.5)
-                _label_isi(doc, "Upaya Pemerintah", _upaya_pemerintah(tp), indent=1.5)
-                _label_isi(doc, "Penindakan", _penindakan(tp), indent=1.5)
+                _subsection(doc, _angka_tutup(j), f"Provinsi {r.provinsi}", indent_lv=2)
+                hs_raw = getattr(r, "hotspot", 0)
+                hs_v = 0 if hs_raw is None or (isinstance(hs_raw, float) and pd.isna(hs_raw)) else int(hs_raw)
+                _label_isi(doc, "a)", "Perkembangan", _desc_perkembangan(r.provinsi, tp, g_row, hs_v),
+                           indent_lv=3)
+                _label_isi(doc, "b)", "Dampak", _desc_dampak(r.provinsi, tp, g_row), indent_lv=3)
+                _label_isi(doc, "c)", "Upaya Pemerintah", _upaya_pemerintah(tp), indent_lv=3)
+                _label_isi(doc, "d)", "Penindakan", _penindakan(tp), indent_lv=3)
     else:
-        for r in pp.itertuples():
-            g_row = pp[pp["provinsi"] == r.provinsi]
-            _ambang(doc, f"Provinsi {r.provinsi}", bold=True, size=11, indent=0.75, after=2)
-            hs_v = int(getattr(r, "hotspot", 0) or 0)
-            _label_isi(doc, "Perkembangan", _desc_perkembangan(r.provinsi, jenis, g_row, hs_v), indent=1.25)
-            _label_isi(doc, "Dampak", _desc_dampak(r.provinsi, jenis, g_row), indent=1.25)
-            _label_isi(doc, "Upaya Pemerintah", _upaya_pemerintah(jenis), indent=1.25)
-            _label_isi(doc, "Penindakan", _penindakan(jenis), indent=1.25)
+        _tulis_indikasi_provinsi(doc, pp, jenis, indent_prov_lv=1, indent_item_lv=2)
 
-    # 2. ANALISIS
-    doc.add_paragraph()
-    _ambang(doc, "ANALISIS", bold=True, size=12, color=NAVY, after=4)
+    # ---------- 2. ANALISIS ----------
+    _section(doc, 2, "ANALISIS")
     for para in _analisis(jenis, ctx):
-        _ambang(doc, para, indent=0.75, after=4)
+        _p(doc, para, indent_lv=1, space_after=6)
 
-    # 3. DAMPAK
-    _ambang(doc, "DAMPAK", bold=True, size=12, color=NAVY, after=4)
-    for d in _dampak_potensial(jenis):
-        _bullet(doc, d)
+    # ---------- 3. DAMPAK ----------
+    _section(doc, 3, "DAMPAK")
+    for i, d in enumerate(_dampak_potensial(jenis)):
+        _item_abjad(doc, _abjad(i), d, indent_lv=1)
 
-    # 4. UPAYA
-    _ambang(doc, "UPAYA", bold=True, size=12, color=NAVY, after=4)
-    _ambang(doc, "Mencermati hal tersebut di atas, Deputi II memerintahkan Kabinda Wilayah Sumakal "
-                 "untuk melakukan langkah-langkah sebagai berikut:", indent=0.75, after=4)
-    for u in _upaya(jenis):
-        _bullet(doc, u)
+    # ---------- 4. UPAYA ----------
+    _section(doc, 4, "UPAYA")
+    _p(doc, "Mencermati hal tersebut di atas, Deputi II memerintahkan Kabinda Wilayah Sumakal "
+            "untuk melakukan langkah-langkah sebagai berikut:", indent_lv=1, space_after=4)
+    for i, u in enumerate(_upaya_butir(jenis)):
+        _item_abjad(doc, _abjad(i), u, indent_lv=1)
 
-    # 5. SARAN TINDAK
-    _ambang(doc, "SARAN TINDAK", bold=True, size=12, color=NAVY, after=4)
-    for s in _saran_tindak(jenis):
-        _bullet(doc, s)
+    # ---------- 5. SARAN TINDAK ----------
+    _section(doc, 5, "SARAN TINDAK")
+    for i, s in enumerate(_saran_tindak(jenis)):
+        _item_abjad(doc, _abjad(i), s, indent_lv=1)
 
-    # Autentikasi
     _autentikasi(doc, ctx)
 
     buf = io.BytesIO()

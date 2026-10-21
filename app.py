@@ -794,9 +794,14 @@ elif page == "Data & Grafik":
                 for tp in [t for t in ["Karhutla", "Banjir", "Gempa", "Bencana Alam Lainnya"]
                            if t in g["tipe_bencana"].values]:
                     sub = g[g["tipe_bencana"] == tp]
+                    # Teks per segmen; sembunyikan kalau 0
+                    seg_text = [str(int(v)) if int(v) > 0 else "" for v in sub["kejadian"]]
                     fig.add_trace(go.Bar(
                         x=sub["label"], y=sub["kejadian"], name=tp,
-                        marker=dict(color=TIPE_COLOR.get(tp, "#64748b")),
+                        marker=dict(color=TIPE_COLOR.get(tp, "#64748b"),
+                                    line=dict(color="rgba(255,255,255,.7)", width=1)),
+                        text=seg_text, textposition="inside", insidetextanchor="middle",
+                        textfont=dict(size=11, color="#ffffff", family="Plus Jakarta Sans"),
                         hovertemplate=f"<b>%{{x}}</b><br>{tp}: %{{y}} kejadian<extra></extra>",
                     ))
                 # Total label di atas setiap stack
@@ -804,22 +809,23 @@ elif page == "Data & Grafik":
                 fig.add_trace(go.Scatter(
                     x=labels_sorted,
                     y=[total_per_periode[l] for l in labels_sorted],
-                    text=[fmt_num(total_per_periode[l]) for l in labels_sorted],
+                    text=[f"<b>{fmt_num(total_per_periode[l])}</b>" for l in labels_sorted],
                     mode="text", textposition="top center",
-                    textfont=dict(size=12, color="#0f2a5c", family="Plus Jakarta Sans"),
-                    showlegend=False, hoverinfo="skip",
+                    textfont=dict(size=13, color="#0f2a5c", family="Plus Jakarta Sans"),
+                    showlegend=False, hoverinfo="skip", name="total",
                 ))
                 ymax = int(total_per_periode.max()) if len(total_per_periode) else 1
                 fig.update_layout(
-                    barmode="stack", height=360, bargap=0.3,
-                    margin=dict(l=8, r=8, t=28, b=8),
+                    barmode="stack", height=380, bargap=0.3,
+                    margin=dict(l=8, r=8, t=32, b=8), uniformtext=dict(minsize=10, mode="hide"),
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                     font=dict(family="Plus Jakarta Sans, Segoe UI, sans-serif", size=12, color="#0f2a5c"),
                     legend=dict(orientation="h", y=1.08, x=0, title_text=""),
                 )
                 fig.update_xaxes(type="category", tickangle=-30 if len(labels_sorted) > 6 else 0,
                                  showgrid=False, linecolor="#dbe6f6")
-                fig.update_yaxes(range=[0, ymax * 1.18 if ymax else 1], gridcolor="#e8eef9", zeroline=False)
+                fig.update_yaxes(range=[0, ymax * 1.2 if ymax else 1], gridcolor="#e8eef9", zeroline=False,
+                                 showticklabels=False)
                 show(fig)
 
         # 2) Tren metrik dampak — pakai METRIK_COLOR (korban=merah, ispa=ungu, dll)

@@ -81,8 +81,11 @@ section[data-testid="stSidebar"]{
 }
 /* Buang padding atas Streamlit yang berlebihan + ruang kosong sebelum nav-brand */
 section[data-testid="stSidebar"] > div:first-child{ padding-top: 0 !important; }
-section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{ padding-top: .4rem; }
-section[data-testid="stSidebar"] [data-testid="stSidebarHeader"]{ padding-bottom: 0 !important; min-height:0; }
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{ padding-top: 0 !important; }
+section[data-testid="stSidebar"] [data-testid="stSidebarHeader"]{ padding: 0 !important; min-height: 0; height: 0; }
+/* Hilangkan margin pada Markdown chunk pertama di sidebar */
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:first-child > div > div > [data-testid="stMarkdown"]:first-child{ margin-top: -8px; }
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] > *:first-child{ margin-top: 0 !important; }
 section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] span, section[data-testid="stSidebar"] div{ color:#eaf1ff; }
 .nav-brand{ display:flex; gap:10px; align-items:center; padding:4px 2px 10px 2px;
@@ -113,9 +116,10 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label p{ font-size:13.5p
 .navuser .u2{ font-size:11.5px; color:#b9cdf5; }
 .navtag{ margin-top:14px; padding:0 4px; font-style:italic; font-weight:700; color:#d8e5ff;
   font-size:13.5px; line-height:1.3; }
+section[data-testid="stSidebar"] .stButton{ margin-top:12px; }
 section[data-testid="stSidebar"] .stButton > button{
   width:100%; background: rgba(255,255,255,.10); color:#fff; border:1px solid rgba(255,255,255,.25);
-  border-radius:10px; font-weight:600; }
+  border-radius:10px; font-weight:600; padding:9px 12px; }
 section[data-testid="stSidebar"] .stButton > button:hover{ background: rgba(255,255,255,.2); border-color:#fff; }
 
 /* ------------------------------------------------ hero */
