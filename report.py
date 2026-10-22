@@ -177,6 +177,8 @@ def _desc_perkembangan(prov, jenis, g, hs_prov):
     bits = []
     if jenis == "Karhutla":
         luas = float(g["luas_ha"].iloc[0]) if "luas_ha" in g.columns else 0
+        padam = float(g["luas_padam_ha"].iloc[0]) if "luas_padam_ha" in g.columns else 0
+        belum = max(0.0, luas - padam)
         s = f"Tercatat {fmt_num(n)} kejadian karhutla seluas ±{fmt_num(luas, 2)} Ha"
         if jml_kab:
             s += f" di {jml_kab} kabupaten/kota"
@@ -184,6 +186,14 @@ def _desc_perkembangan(prov, jenis, g, hs_prov):
             s += f", dengan sebaran utama di {kabs}"
         s += "."
         bits.append(s)
+        if luas > 0 and padam >= 0:
+            if belum == 0:
+                bits.append(f"Seluruh luasan terbakar ({fmt_num(luas, 2)} Ha) telah dilaporkan padam.")
+            else:
+                pct_padam = padam / luas * 100 if luas else 0
+                bits.append(f"Status pemadaman: {fmt_num(padam, 2)} Ha sudah padam "
+                            f"({fmt_num(pct_padam, 1)}%) dan {fmt_num(belum, 2)} Ha masih dalam proses "
+                            "pemadaman.")
         if hs_prov is not None and hs_prov > 0:
             bits.append(f"Pada data pantauan satelit terakhir, tercatat {fmt_num(hs_prov)} titik hotspot "
                         f"di wilayah {prov}.")
@@ -323,10 +333,23 @@ def _analisis(jenis, ctx):
     kj_total = int(pp["korban_jiwa"].sum()) if (pp is not None and "korban_jiwa" in pp.columns) else 0
     teks = []
     if jenis == "Karhutla":
+        # Status pemadaman kumulatif
+        df_cur = ctx.get("df_cur")
+        padam_info = ""
+        if df_cur is not None and not df_cur.empty and "luas_padam_ha" in df_cur.columns:
+            lt = float(pd.to_numeric(df_cur["luas_ha"], errors="coerce").sum(skipna=True))
+            lp = float(pd.to_numeric(df_cur["luas_padam_ha"], errors="coerce").sum(skipna=True))
+            if lt > 0:
+                belum = max(0.0, lt - lp)
+                pct = lp / lt * 100
+                padam_info = (f" Dari total {fmt_num(lt, 1)} Ha luas terbakar, {fmt_num(lp, 1)} Ha "
+                              f"({fmt_num(pct, 1)}%) telah dilaporkan padam dan {fmt_num(belum, 1)} Ha "
+                              "masih dalam proses pemadaman.")
         teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian karhutla "
-                    f"di wilayah {ctx['wilayah']}. Penanganan karhutla menjadi perhatian pemerintah pusat "
-                    "dan daerah melalui penetapan status siaga/tanggap darurat, pembentukan satgas, "
-                    "penguatan koordinasi lintas sektor, serta dukungan anggaran dan peralatan.")
+                    f"di wilayah {ctx['wilayah']}.{padam_info} Penanganan karhutla menjadi perhatian "
+                    "pemerintah pusat dan daerah melalui penetapan status siaga/tanggap darurat, "
+                    "pembentukan satgas, penguatan koordinasi lintas sektor, serta dukungan anggaran "
+                    "dan peralatan.")
         teks.append("Karhutla berpotensi menimbulkan dampak ekonomi dan sosial melalui kerusakan lahan "
                     "pertanian, perkebunan dan kehutanan, terganggunya transportasi, distribusi barang "
                     "dan aktivitas masyarakat, serta meningkatnya risiko gangguan kesehatan terutama "
@@ -537,6 +560,8 @@ def _bangun_perprovinsi_agg(df_cur, hs_today_df):
         pengungsi=("pengungsi", "sum"),
         ispa=("ispa", "sum"),
     )
+    if "luas_padam_ha" in df_cur.columns:
+        g["luas_padam_ha"] = df_cur.groupby("provinsi")["luas_padam_ha"].sum(min_count=1)
     if "rumah_terdampak" in df_cur.columns:
         g["rumah_terdampak"] = df_cur.groupby("provinsi")["rumah_terdampak"].sum(min_count=1)
     if "tinggi_genangan_cm" in df_cur.columns:

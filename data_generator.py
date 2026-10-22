@@ -70,6 +70,7 @@ def generate_incidents(n=1400, seed=42, start=None, end=None):
             "lon": info["lon"] + rng.uniform(-0.8, 0.8),
             "tipe_bencana": tipe,
             "luas_ha": np.nan,
+            "luas_padam_ha": np.nan,
             "magnitudo": np.nan,
             "kedalaman_km": np.nan,
             "tinggi_genangan_cm": np.nan,
@@ -84,6 +85,9 @@ def generate_incidents(n=1400, seed=42, start=None, end=None):
         if tipe == "Karhutla":
             row["penyebab"] = rng.choice(PENYEBAB_KARHUTLA)
             row["luas_ha"] = round(float(rng.exponential(18) + 2), 2)
+            # Luas yang sudah padam: 55–98% dari luas_ha (sisanya belum padam)
+            padam_pct = float(np.clip(rng.beta(6, 2), 0.55, 0.98))
+            row["luas_padam_ha"] = round(row["luas_ha"] * padam_pct, 2)
             row["ispa"] = int(rng.poisson(1.8))
             row["pengungsi"] = int(rng.poisson(12))
             row["korban_jiwa"] = int(rng.poisson(0.02))

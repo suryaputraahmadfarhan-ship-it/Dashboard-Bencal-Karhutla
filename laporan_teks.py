@@ -136,6 +136,25 @@ def _ekstrak_angka(teks):
     v = _angka_dari(r"(\d+(?:[.,]\d+)?)\s*(?:ha|hektar(?:e)?)\b", teks, cast=float)
     if v is not None:
         out["luas_ha"] = v
+    # Luas yang sudah padam / sudah dipadamkan
+    v = _angka_dari(r"(\d+(?:[.,]\d+)?)\s*(?:ha|hektar(?:e)?)\s*(?:sudah|telah|berhasil)?\s*(?:di)?padam(?:kan)?",
+                    teks, cast=float)
+    if v is None:
+        v = _angka_dari(r"(?:sudah|telah|berhasil)\s*(?:di)?padam(?:kan)?\D{0,20}(\d+(?:[.,]\d+)?)\s*(?:ha|hektar(?:e)?)",
+                        teks, cast=float)
+    if v is not None:
+        out["luas_padam_ha"] = v
+    # Luas yang belum padam (fallback — hitung total-padam kalau total diketahui)
+    v = _angka_dari(r"(\d+(?:[.,]\d+)?)\s*(?:ha|hektar(?:e)?)\s*belum\s*(?:di)?padam(?:kan)?",
+                    teks, cast=float)
+    if v is None:
+        v = _angka_dari(r"belum\s*(?:di)?padam(?:kan)?\D{0,20}(\d+(?:[.,]\d+)?)\s*(?:ha|hektar(?:e)?)",
+                        teks, cast=float)
+    if v is not None:
+        out["luas_belum_padam_ha"] = v
+    # Jika ada luas_belum_padam tapi tidak ada luas_padam: hitung
+    if "luas_belum_padam_ha" in out and "luas_padam_ha" not in out and "luas_ha" in out:
+        out["luas_padam_ha"] = max(0.0, out["luas_ha"] - out["luas_belum_padam_ha"])
     v = _angka_dari(r"(?:tinggi\s+(?:genangan|air|banjir)|genangan)\D{0,10}(\d+(?:[.,]\d+)?)\s*cm", teks, cast=float)
     if v is None:
         v = _angka_dari(r"(\d+(?:[.,]\d+)?)\s*cm", teks, cast=float)
@@ -228,7 +247,8 @@ def build_laporan_teks_docx(rec):
     angka = rec["ekstraksi"]["angka"]
     label = {
         "korban_jiwa": "Korban jiwa (orang)", "pengungsi": "Pengungsi (orang)",
-        "rumah_terdampak": "Rumah terdampak (unit)", "luas_ha": "Luas terdampak (ha)",
+        "rumah_terdampak": "Rumah terdampak (unit)", "luas_ha": "Luas terbakar (ha)",
+        "luas_padam_ha": "Luas sudah padam (ha)", "luas_belum_padam_ha": "Luas belum padam (ha)",
         "tinggi_genangan_cm": "Tinggi genangan (cm)", "magnitudo": "Magnitudo (SR)",
         "kedalaman_km": "Kedalaman (km)", "ispa": "Kasus ISPA", "hotspot": "Titik api / hotspot",
     }
@@ -282,6 +302,7 @@ def _tipe_ke_df_row(ek, petugas):
                 "lon": info["lon"],
                 "tipe_bencana": j,
                 "luas_ha": a.get("luas_ha"),
+                "luas_padam_ha": a.get("luas_padam_ha"),
                 "magnitudo": a.get("magnitudo"),
                 "kedalaman_km": a.get("kedalaman_km"),
                 "tinggi_genangan_cm": a.get("tinggi_genangan_cm"),
@@ -306,8 +327,9 @@ def render_tab_buat_laporan(user, admin):
         sumber = c2.text_input("Sumber informasi", placeholder="Mis. Posko BPBD Riau / Danramil / Camat")
         teks = st.text_area("Teks laporan dari wilayah",
                             placeholder=("Contoh: Pada 18 Oktober 2026 terjadi karhutla di Kabupaten Pelalawan, "
-                                         "Provinsi Riau. Luas lahan terbakar sekitar 32 ha, 45 warga mengungsi, "
-                                         "dan 18 kasus ISPA tercatat. Terpantau 12 titik api di sekitar lokasi."),
+                                         "Provinsi Riau. Luas lahan terbakar sekitar 90 ha, 80 ha sudah "
+                                         "dipadamkan dan 10 ha belum padam. 45 warga mengungsi, 18 kasus ISPA "
+                                         "tercatat. Terpantau 12 titik api di sekitar lokasi."),
                             height=180)
         c1, c2, c3 = st.columns([1, 1, 1])
         pratinjau = c1.form_submit_button("🔍 Pratinjau Ekstraksi")

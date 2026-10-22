@@ -19,14 +19,15 @@ PERIODE = {
 }
 
 KOLOM_TEMPLATE_BENCANA = ["tanggal", "provinsi", "kabupaten", "tipe_bencana",
-                          "luas_ha", "magnitudo", "kedalaman_km", "tinggi_genangan_cm", "rumah_terdampak",
+                          "luas_ha", "luas_padam_ha",
+                          "magnitudo", "kedalaman_km", "tinggi_genangan_cm", "rumah_terdampak",
                           "korban_jiwa", "pengungsi", "ispa",
                           "penyebab", "status_verifikasi", "sumber", "lat", "lon"]
 KOLOM_TEMPLATE_HOTSPOT = ["tanggal", "provinsi", "kabupaten", "lat", "lon", "confidence", "satelit", "frp", "sumber"]
 
 # Kolom yang relevan ditampilkan per jenis bencana (selain kolom umum)
 KOLOM_SPESIFIK = {
-    "Karhutla": ["luas_ha", "ispa"],
+    "Karhutla": ["luas_ha", "luas_padam_ha", "ispa"],
     "Banjir": ["tinggi_genangan_cm", "rumah_terdampak", "luas_ha"],
     "Gempa": ["magnitudo", "kedalaman_km", "rumah_terdampak"],
     "Bencana Alam Lainnya": ["rumah_terdampak"],
@@ -143,7 +144,10 @@ def normalize_bencana(df):
     d = _rename_first(d, "provinsi", ["province", "propinsi", "prov"])
     d = _rename_first(d, "kabupaten", ["kab", "kota", "kab_kota", "kabupaten_kota"])
     d = _rename_first(d, "tipe_bencana", ["tipe", "jenis", "jenis_bencana", "type", "disaster_type"])
-    d = _rename_first(d, "luas_ha", ["luas", "area_ha", "luasan", "luas_terdampak", "luas_terdampak_ha"])
+    d = _rename_first(d, "luas_ha", ["luas", "area_ha", "luasan", "luas_terdampak", "luas_terdampak_ha",
+                                      "luas_lahan_terbakar", "luas_terbakar_ha", "luas_terbakar"])
+    d = _rename_first(d, "luas_padam_ha", ["luas_padam", "luas_sudah_padam", "luas_sudah_padam_ha",
+                                            "padam_ha", "luas_dipadamkan", "luas_dipadamkan_ha"])
     d = _rename_first(d, "magnitudo", ["magnitude", "mag", "mw", "sr", "skala_richter"])
     d = _rename_first(d, "kedalaman_km", ["kedalaman", "depth", "depth_km"])
     d = _rename_first(d, "tinggi_genangan_cm", ["tinggi_genangan", "tinggi_air", "genangan", "genangan_cm",
@@ -164,8 +168,13 @@ def normalize_bencana(df):
     d["provinsi"] = d["provinsi"].astype(str).str.strip().str.title()
     d["tipe_bencana"] = d["tipe_bencana"].map(_norm_tipe) if "tipe_bencana" in d.columns else "Bencana Alam Lainnya"
     # kolom numerik berbasis NaN (biar sum/mean mengabaikan jenis bencana yang tidak relevan)
-    for c in ["luas_ha", "magnitudo", "kedalaman_km", "tinggi_genangan_cm", "rumah_terdampak", "lat", "lon"]:
+    for c in ["luas_ha", "luas_padam_ha", "magnitudo", "kedalaman_km", "tinggi_genangan_cm",
+              "rumah_terdampak", "lat", "lon"]:
         d[c] = pd.to_numeric(d[c], errors="coerce") if c in d.columns else np.nan
+    # Pastikan luas_padam_ha tidak melebihi luas_ha
+    if "luas_padam_ha" in d.columns and "luas_ha" in d.columns:
+        mask = d["luas_padam_ha"].notna() & d["luas_ha"].notna()
+        d.loc[mask, "luas_padam_ha"] = d.loc[mask, ["luas_padam_ha", "luas_ha"]].min(axis=1)
     for c in ["korban_jiwa", "pengungsi", "ispa"]:
         d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0).astype(int) if c in d.columns else 0
     for c, default in [("kabupaten", "-"), ("penyebab", "-"), ("status_verifikasi", "Perlu Verifikasi"),

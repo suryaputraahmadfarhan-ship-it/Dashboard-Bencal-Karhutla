@@ -40,18 +40,21 @@ HOTSPOT_BUCKET_COLOR = {
 # Warna PER METRIK — konsisten dipakai di seluruh dashboard (bukan per jenis bencana).
 # Dampak kemanusiaan = merah/orange, dampak lingkungan = teal/hijau, infra = rose.
 METRIK_COLOR = {
-    "kejadian":           "#2563eb",  # biru = jumlah kejadian
-    "luas_ha":            "#0d9488",  # teal = luas terdampak (lingkungan)
-    "korban_jiwa":        "#dc2626",  # merah = korban jiwa (gawat)
-    "pengungsi":          "#f59e0b",  # amber = pengungsi
-    "ispa":               "#8b5cf6",  # ungu = kesehatan (ISPA)
-    "rumah_terdampak":    "#e11d48",  # rose = rumah terdampak (infra)
-    "tinggi_genangan_cm": "#0ea5e9",  # cyan = tinggi genangan (air)
-    "magnitudo":          "#475569",  # slate = magnitudo (geofisika)
-    "hotspot":            "#ea580c",  # orange tua = titik api
+    "kejadian":              "#2563eb",  # biru = jumlah kejadian
+    "luas_ha":               "#ea580c",  # orange = luas terbakar (api aktif)
+    "luas_padam_ha":         "#16a34a",  # hijau = sudah padam (aman)
+    "luas_belum_padam_ha":   "#dc2626",  # merah = belum padam (bahaya)
+    "korban_jiwa":           "#dc2626",  # merah = korban jiwa (gawat)
+    "pengungsi":             "#f59e0b",  # amber = pengungsi
+    "ispa":                  "#8b5cf6",  # ungu = kesehatan (ISPA)
+    "rumah_terdampak":       "#e11d48",  # rose = rumah terdampak (infra)
+    "tinggi_genangan_cm":    "#0ea5e9",  # cyan = tinggi genangan (air)
+    "magnitudo":             "#475569",  # slate = magnitudo (geofisika)
+    "hotspot":               "#ea580c",  # orange tua = titik api
 }
 METRIK_LABEL = {
-    "kejadian": "Jumlah Kejadian", "luas_ha": "Luas Terdampak (ha)",
+    "kejadian": "Jumlah Kejadian", "luas_ha": "Luas Terbakar (ha)",
+    "luas_padam_ha": "Luas Sudah Padam (ha)", "luas_belum_padam_ha": "Luas Belum Padam (ha)",
     "korban_jiwa": "Korban Jiwa", "pengungsi": "Pengungsi",
     "ispa": "Kasus ISPA", "rumah_terdampak": "Rumah Terdampak",
     "tinggi_genangan_cm": "Tinggi Genangan (cm)", "magnitudo": "Magnitudo (SR)",

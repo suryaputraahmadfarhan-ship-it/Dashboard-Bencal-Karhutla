@@ -154,24 +154,37 @@ def top_table_html(top):
 
 
 def agg_prov(df):
-    cols = ["provinsi", "kejadian", "luas_ha", "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]
+    cols = ["provinsi", "kejadian", "luas_ha", "luas_padam_ha", "luas_belum_padam_ha",
+            "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]
     if df is None or df.empty:
         return pd.DataFrame(columns=cols)
     aggs = {"kejadian": ("tipe_bencana", "size"), "luas_ha": ("luas_ha", "sum"),
             "korban_jiwa": ("korban_jiwa", "sum"), "pengungsi": ("pengungsi", "sum"),
             "ispa": ("ispa", "sum")}
+    if "luas_padam_ha" in df.columns:
+        aggs["luas_padam_ha"] = ("luas_padam_ha", "sum")
     if "rumah_terdampak" in df.columns:
         aggs["rumah_terdampak"] = ("rumah_terdampak", "sum")
-    return (df.groupby("provinsi").agg(**aggs)
-            .reset_index().sort_values("kejadian", ascending=False).reset_index(drop=True))
+    out = (df.groupby("provinsi").agg(**aggs)
+           .reset_index().sort_values("kejadian", ascending=False).reset_index(drop=True))
+    if "luas_padam_ha" in out.columns and "luas_ha" in out.columns:
+        out["luas_belum_padam_ha"] = (out["luas_ha"] - out["luas_padam_ha"]).clip(lower=0)
+    return out
 
 
 def agg_tipe(df):
     if df is None or df.empty:
-        return pd.DataFrame(columns=["tipe_bencana", "kejadian", "luas_ha", "korban_jiwa", "ispa"])
-    return (df.groupby("tipe_bencana").agg(kejadian=("tipe_bencana", "size"), luas_ha=("luas_ha", "sum"),
-                                           korban_jiwa=("korban_jiwa", "sum"), ispa=("ispa", "sum"))
-            .reset_index().sort_values("kejadian", ascending=False).reset_index(drop=True))
+        return pd.DataFrame(columns=["tipe_bencana", "kejadian", "luas_ha", "luas_padam_ha",
+                                     "luas_belum_padam_ha", "korban_jiwa", "ispa"])
+    aggs = dict(kejadian=("tipe_bencana", "size"), luas_ha=("luas_ha", "sum"),
+                korban_jiwa=("korban_jiwa", "sum"), ispa=("ispa", "sum"))
+    if "luas_padam_ha" in df.columns:
+        aggs["luas_padam_ha"] = ("luas_padam_ha", "sum")
+    out = (df.groupby("tipe_bencana").agg(**aggs)
+           .reset_index().sort_values("kejadian", ascending=False).reset_index(drop=True))
+    if "luas_padam_ha" in out.columns and "luas_ha" in out.columns:
+        out["luas_belum_padam_ha"] = (out["luas_ha"] - out["luas_padam_ha"]).clip(lower=0)
+    return out
 
 
 def bersihkan(df):
@@ -181,10 +194,11 @@ def bersihkan(df):
     d = df.drop(columns=[c for c in ["id_kejadian", "lat", "lon", "korban_luka", "severity"] if c in df.columns])
     pref = ["tanggal", "provinsi", "kabupaten", "tipe_bencana",
             "magnitudo", "kedalaman_km", "tinggi_genangan_cm", "rumah_terdampak",
-            "luas_ha", "korban_jiwa", "pengungsi", "ispa",
+            "luas_ha", "luas_padam_ha", "korban_jiwa", "pengungsi", "ispa",
             "penyebab", "status_verifikasi", "sumber"]
     d = d[[c for c in pref if c in d.columns] + [c for c in d.columns if c not in pref]].copy()
-    for c in ["magnitudo", "kedalaman_km", "tinggi_genangan_cm", "rumah_terdampak", "luas_ha", "ispa"]:
+    for c in ["magnitudo", "kedalaman_km", "tinggi_genangan_cm", "rumah_terdampak", "luas_ha",
+              "luas_padam_ha", "ispa"]:
         if c in d.columns and d[c].isna().all():
             d = d.drop(columns=c)
     if "tanggal" in d.columns:
@@ -202,6 +216,11 @@ def metrik_spesifik(df):
         if tipe == "Karhutla":
             if "luas_ha" in g and g["luas_ha"].notna().any():
                 item["Luas (ha)"] = float(g["luas_ha"].sum())
+            if "luas_padam_ha" in g and g["luas_padam_ha"].notna().any():
+                padam = float(g["luas_padam_ha"].sum(skipna=True))
+                total = float(g["luas_ha"].sum(skipna=True))
+                item["Sudah Padam (ha)"] = padam
+                item["Belum Padam (ha)"] = max(0.0, total - padam)
             if "ispa" in g:
                 item["ISPA"] = int(g["ispa"].sum())
         elif tipe == "Banjir":
@@ -383,9 +402,9 @@ def _metrik_tren(tp):
     """Daftar (metrik, judul, agregasi) untuk chart tren bulanan per jenis spesifik."""
     if tp == "Karhutla":
         return [("kejadian", "Jumlah Kejadian Karhutla", "count"),
-                ("luas_ha", "Luas Terdampak (ha)", "sum"),
-                ("ispa", "Kasus ISPA", "sum"),
-                ("korban_jiwa", "Korban Jiwa", "sum")]
+                ("luas_ha", "Luas Terbakar (ha)", "sum"),
+                ("luas_padam_ha", "Luas Sudah Padam (ha)", "sum"),
+                ("ispa", "Kasus ISPA", "sum")]
     if tp == "Banjir":
         return [("kejadian", "Jumlah Kejadian Banjir", "count"),
                 ("rumah_terdampak", "Rumah Terdampak", "sum"),
@@ -453,6 +472,17 @@ def _ringkasan_untuk(cur_df, prev_df, jenis_lap, hs_today_df, hs_prevday_df, hs_
         if ispa.sum() > 0:
             perh.append(f"Dampak kesehatan (ISPA) tercatat {fmt_num(ispa.sum())} kasus, terbanyak di "
                         f"{ispa.index[0]} ({fmt_num(ispa.iloc[0])} kasus); perlu diantisipasi.")
+    if jenis_lap in ("Semua", "Karhutla") and "luas_padam_ha" in cur_df.columns:
+        lp = pd.to_numeric(cur_df["luas_padam_ha"], errors="coerce").sum(skipna=True)
+        lt = pd.to_numeric(cur_df["luas_ha"], errors="coerce").sum(skipna=True)
+        if lt > 0:
+            belum = max(0.0, lt - lp)
+            if belum > 0:
+                pct_belum = (belum / lt) * 100
+                perh.append(f"Luas belum padam {fmt_num(belum, 1)} ha ({fmt_num(pct_belum, 1)}% dari "
+                            f"total {fmt_num(lt, 1)} ha) — perlu akselerasi pemadaman.")
+            else:
+                perh.append(f"Seluruh lahan terbakar ({fmt_num(lt, 1)} ha) telah dilaporkan padam.")
     if jenis_lap in ("Semua", "Banjir", "Gempa", "Bencana Alam Lainnya") and "rumah_terdampak" in cur_df.columns:
         rt = cur_df.groupby("provinsi")["rumah_terdampak"].sum(min_count=1).dropna().sort_values(ascending=False)
         if rt.sum() > 0:
@@ -514,6 +544,14 @@ def ringkasan():
         if ispa.sum() > 0:
             perhatian.append(f"Dampak kesehatan (ISPA) tercatat {fmt_num(ispa.sum())} kasus, terbanyak di "
                              f"{ispa.index[0]} ({fmt_num(ispa.iloc[0])} kasus); perlu diantisipasi.")
+    if pakai_hotspot() and "luas_padam_ha" in cur.columns:
+        lp = pd.to_numeric(cur["luas_padam_ha"], errors="coerce").sum(skipna=True)
+        lt = pd.to_numeric(cur["luas_ha"], errors="coerce").sum(skipna=True)
+        if lt > 0:
+            belum = max(0.0, lt - lp)
+            if belum > 0:
+                perhatian.append(f"Luas belum padam {fmt_num(belum, 1)} ha "
+                                 f"({fmt_num(belum / lt * 100, 1)}% dari {fmt_num(lt, 1)} ha total terbakar).")
     if tipe in ("Semua", "Banjir", "Gempa", "Bencana Alam Lainnya") and "rumah_terdampak" in cur.columns:
         rt = cur.groupby("provinsi")["rumah_terdampak"].sum(min_count=1).dropna().sort_values(ascending=False)
         if rt.sum() > 0:
@@ -583,7 +621,19 @@ def kpi_values():
         return [kejadian, mag, rumah, korban]
     if tipe == "Bencana Alam Lainnya":
         return [kejadian, rumah, pengungsi, korban]
-    # Semua & Karhutla
+    if tipe == "Karhutla":
+        # Karhutla fokus pada status pemadaman
+        padam = tot(cur, "luas_padam_ha")
+        padam_pv = tot(pv, "luas_padam_ha") if pv is not None else None
+        belum = max(0.0, tot(cur, "luas_ha") - padam)
+        belum_pv = (max(0.0, tot(pv, "luas_ha") - padam_pv)
+                    if pv is not None and padam_pv is not None else None)
+        luas_terbakar = ("Luas Terbakar", tot(cur, "luas_ha"),
+                         tot(pv, "luas_ha") if pv is not None else None, 1, "ha", "🔥", "orange")
+        sudah_padam = ("Sudah Padam", padam, padam_pv, 1, "ha", "✅", "teal")
+        belum_padam = ("Belum Padam", belum, belum_pv, 1, "ha", "⚠️", "rose")
+        return [luas_terbakar, sudah_padam, belum_padam, ispa]
+    # Semua
     return [kejadian, luas, korban, ispa]
 
 
@@ -952,7 +1002,7 @@ elif page == "Rekap Wilayah":
     # Hotspot hanya untuk jenis "Semua" / "Karhutla"
     if pakai_hotspot() and hs_period is not None and not hs_period.empty:
         tabel["hotspot"] = tabel["provinsi"].map(hs_period.groupby("provinsi").size()).fillna(0).astype(int)
-    # Tinggi genangan rata-rata untuk Banjir (kolom tambahan agar lebih kaya info)
+    # Tinggi genangan rata-rata untuk Banjir
     if tipe == "Banjir" and "tinggi_genangan_cm" in cur.columns:
         tg = cur.groupby("provinsi")["tinggi_genangan_cm"].mean().round(0)
         tabel["tinggi_genangan_cm"] = tabel["provinsi"].map(tg).fillna(0).astype(int)
@@ -960,6 +1010,13 @@ elif page == "Rekap Wilayah":
     if tipe == "Gempa" and "magnitudo" in cur.columns:
         mg = cur.groupby("provinsi")["magnitudo"].max().round(1)
         tabel["magnitudo_maks"] = tabel["provinsi"].map(mg).fillna(0)
+    # Status pemadaman karhutla (padam / belum padam)
+    if tipe in ("Semua", "Karhutla") and "luas_padam_ha" in cur.columns:
+        if "luas_padam_ha" not in tabel.columns:
+            tabel["luas_padam_ha"] = tabel["provinsi"].map(
+                cur.groupby("provinsi")["luas_padam_ha"].sum(min_count=1)).fillna(0)
+        tabel["luas_belum_padam_ha"] = (tabel["luas_ha"] - tabel["luas_padam_ha"]).clip(lower=0)
+
     for c in ["kejadian", "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]:
         if c in tabel.columns:
             tabel[c] = tabel[c].astype(int)
@@ -968,7 +1025,7 @@ elif page == "Rekap Wilayah":
     # Kolom yang ditampilkan sesuai jenis bencana
     kolom_umum = ["provinsi", "kejadian", "korban_jiwa", "pengungsi"]
     if tipe in ("Semua", "Karhutla"):
-        kolom_tampil = kolom_umum + ["luas_ha", "ispa"]
+        kolom_tampil = kolom_umum + ["luas_ha", "luas_padam_ha", "luas_belum_padam_ha", "ispa"]
         if "hotspot" in tabel.columns:
             kolom_tampil.append("hotspot")
     elif tipe == "Banjir":
@@ -990,7 +1047,9 @@ elif page == "Rekap Wilayah":
             "provinsi": "Provinsi",
             "kejadian": st.column_config.ProgressColumn("Kejadian", min_value=0,
                                                         max_value=max(int(tabel["kejadian"].max()), 1), format="%d"),
-            "luas_ha": st.column_config.NumberColumn("Luas (ha)", format="%.1f"),
+            "luas_ha": st.column_config.NumberColumn("Luas Terbakar (ha)", format="%.1f"),
+            "luas_padam_ha": st.column_config.NumberColumn("Sudah Padam (ha)", format="%.1f"),
+            "luas_belum_padam_ha": st.column_config.NumberColumn("Belum Padam (ha)", format="%.1f"),
             "korban_jiwa": "Korban Jiwa", "pengungsi": "Pengungsi", "ispa": "ISPA",
             "rumah_terdampak": "Rumah Terdampak", "hotspot": "Hotspot (periode)",
             "tinggi_genangan_cm": st.column_config.NumberColumn("Tinggi Genangan Rata² (cm)", format="%d"),
@@ -1044,30 +1103,36 @@ elif page == "Rekap Wilayah":
             aggs = {"kejadian": ("tipe_bencana", "size"), "luas_ha": ("luas_ha", "sum"),
                     "korban_jiwa": ("korban_jiwa", "sum"), "pengungsi": ("pengungsi", "sum"),
                     "ispa": ("ispa", "sum")}
+            if "luas_padam_ha" in d.columns:
+                aggs["luas_padam_ha"] = ("luas_padam_ha", "sum")
             if "rumah_terdampak" in d.columns:
                 aggs["rumah_terdampak"] = ("rumah_terdampak", "sum")
             gk = (d.groupby("kabupaten").agg(**aggs).reset_index()
                   .merge(jenis_kab, on="kabupaten")
                   .sort_values("kejadian", ascending=False))
-            # susun ulang kolom: kabupaten, jenis_bencana, kejadian, ...
-            cols_order = ["kabupaten", "jenis_bencana", "kejadian", "luas_ha", "korban_jiwa",
-                          "pengungsi", "ispa", "rumah_terdampak"]
+            if "luas_padam_ha" in gk.columns and "luas_ha" in gk.columns:
+                gk["luas_belum_padam_ha"] = (gk["luas_ha"] - gk["luas_padam_ha"]).clip(lower=0)
+            # susun ulang kolom
+            cols_order = ["kabupaten", "jenis_bencana", "kejadian", "luas_ha", "luas_padam_ha",
+                          "luas_belum_padam_ha", "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]
             gk = gk[[c for c in cols_order if c in gk.columns]]
             for c in ["korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]:
                 if c in gk.columns:
                     gk[c] = gk[c].fillna(0).astype(int)
             if tipe in ("Banjir", "Gempa", "Bencana Alam Lainnya"):
-                for c in ["luas_ha", "ispa"]:
+                for c in ["luas_ha", "luas_padam_ha", "luas_belum_padam_ha", "ispa"]:
                     if c in gk.columns:
                         gk = gk.drop(columns=c)
-            for c in ["luas_ha", "ispa", "rumah_terdampak"]:
+            for c in ["luas_ha", "luas_padam_ha", "luas_belum_padam_ha", "ispa", "rumah_terdampak"]:
                 if c in gk.columns and gk[c].sum() == 0:
                     gk = gk.drop(columns=c)
             show_df(gk, column_config={
                 "kabupaten": "Kabupaten/Kota",
                 "jenis_bencana": st.column_config.TextColumn("Jenis Bencana", width="medium"),
                 "kejadian": "Kejadian",
-                "luas_ha": st.column_config.NumberColumn("Luas (ha)", format="%.1f"),
+                "luas_ha": st.column_config.NumberColumn("Luas Terbakar (ha)", format="%.1f"),
+                "luas_padam_ha": st.column_config.NumberColumn("Sudah Padam (ha)", format="%.1f"),
+                "luas_belum_padam_ha": st.column_config.NumberColumn("Belum Padam (ha)", format="%.1f"),
                 "korban_jiwa": "Korban Jiwa", "pengungsi": "Pengungsi",
                 "ispa": "ISPA", "rumah_terdampak": "Rumah Terdampak",
             })
