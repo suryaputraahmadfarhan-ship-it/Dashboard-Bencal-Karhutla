@@ -193,15 +193,14 @@ def bersihkan(df):
         return df
     d = df.drop(columns=[c for c in ["id_kejadian", "lat", "lon", "korban_luka", "severity"] if c in df.columns])
     # Spesifikkan sub-tipe untuk 'Bencana Alam Lainnya' agar tidak ambigu di tabel:
-    #   'Bencana Alam Lainnya' + penyebab 'Longsor' → 'Bencana Alam Lainnya (Longsor)'
+    #   'Bencana Alam Lainnya' + penyebab 'Longsor' → langsung 'Longsor'
+    #   Kalau penyebab kosong/tidak diketahui, pertahankan label 'Bencana Alam Lainnya'.
     if "tipe_bencana" in d.columns and "penyebab" in d.columns:
         mask = d["tipe_bencana"] == "Bencana Alam Lainnya"
         if mask.any():
             sub = d.loc[mask, "penyebab"].astype(str).str.strip()
             sub_ok = sub.where(sub.str.lower().isin(["tidak diketahui", "nan", "none", "-", ""]) == False)
-            d.loc[mask & sub_ok.notna(), "tipe_bencana"] = (
-                "Bencana Alam Lainnya (" + sub_ok.dropna() + ")"
-            )
+            d.loc[mask & sub_ok.notna(), "tipe_bencana"] = sub_ok.dropna().values
     # Tambah kolom turunan 'luas_belum_padam_ha' untuk kejadian Karhutla
     if "luas_padam_ha" in d.columns and "luas_ha" in d.columns:
         belum = (pd.to_numeric(d["luas_ha"], errors="coerce")
