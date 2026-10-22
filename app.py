@@ -192,13 +192,19 @@ def bersihkan(df):
     if df is None or df.empty:
         return df
     d = df.drop(columns=[c for c in ["id_kejadian", "lat", "lon", "korban_luka", "severity"] if c in df.columns])
+    # Tambah kolom turunan 'luas_belum_padam_ha' untuk kejadian Karhutla
+    if "luas_padam_ha" in d.columns and "luas_ha" in d.columns:
+        belum = (pd.to_numeric(d["luas_ha"], errors="coerce")
+                 - pd.to_numeric(d["luas_padam_ha"], errors="coerce"))
+        d["luas_belum_padam_ha"] = belum.clip(lower=0)
     pref = ["tanggal", "provinsi", "kabupaten", "tipe_bencana",
             "magnitudo", "kedalaman_km", "tinggi_genangan_cm", "rumah_terdampak",
-            "luas_ha", "luas_padam_ha", "korban_jiwa", "pengungsi", "ispa",
+            "luas_ha", "luas_padam_ha", "luas_belum_padam_ha",
+            "korban_jiwa", "pengungsi", "ispa",
             "penyebab", "status_verifikasi", "sumber"]
     d = d[[c for c in pref if c in d.columns] + [c for c in d.columns if c not in pref]].copy()
     for c in ["magnitudo", "kedalaman_km", "tinggi_genangan_cm", "rumah_terdampak", "luas_ha",
-              "luas_padam_ha", "ispa"]:
+              "luas_padam_ha", "luas_belum_padam_ha", "ispa"]:
         if c in d.columns and d[c].isna().all():
             d = d.drop(columns=c)
     if "tanggal" in d.columns:
@@ -266,12 +272,15 @@ if "dimuat" not in st.session_state:
     st.session_state["dimuat"] = datetime.now(WIB).strftime("%H.%M WIB")
 
 # ====================================================================== sidebar
-PAGES = [("🏠", "Beranda"), ("📊", "Data & Grafik"), ("📍", "Peta Sebaran"), ("🗂️", "Rekap Wilayah"),
+PAGES = [("🏠", "Beranda"), ("📊", "Data & Grafik"), ("🛰️", "Sebaran Hotspot"), ("🗂️", "Rekap Wilayah"),
          ("📄", "Laporan")]
 if is_admin():
     PAGES.append(("⚙️", "Pengelolaan Data"))
 ICON = dict((n, i) for i, n in PAGES)
 names = [n for _, n in PAGES]
+# Migrasi nama lama "Peta Sebaran" → "Sebaran Hotspot"
+if st.session_state.get("nav") == "Peta Sebaran":
+    st.session_state["nav"] = "Sebaran Hotspot"
 if st.session_state.get("nav") not in names:
     st.session_state["nav"] = "Beranda"
 
@@ -652,24 +661,49 @@ if page == "Beranda":
     kpi_row()
     st.write("")
 
-    # Baris 1 — Peta Sebaran Hotspot full-width (hanya untuk Semua / Karhutla)
-    if pakai_hotspot():
-        with st.container(border=True):
-            theme.panel_title("📍 Sebaran Hotspot", "(Per Hari Ini)")
-            if hs_today is None or hs_today.empty:
-                st.caption("Data hotspot belum tersedia.")
-            else:
-                st.markdown(f'<div class="psub">{wil_label} · {tgl_id(hs_end, True)} · '
-                            f'{fmt_num(len(hs_today))} titik</div>', unsafe_allow_html=True)
-                m, t = st.columns([2.6, 1])
-                with m:
-                    show(hotspot_map(hs_today, wilayah, 520, zoom_delta=-0.5))
-                    legend_hotspot()
-                with t:
-                    st.markdown('<div class="subhead">5 Provinsi dengan<br>Hotspot Tertinggi</div>',
-                                unsafe_allow_html=True)
-                    st.markdown(top_table_html(top_hotspot_df(hs_today)), unsafe_allow_html=True)
-        st.write("")
+    # Baris 1 — Peta Kejadian Bencana (semua jenis sesuai filter), full-width
+    with st.container(border=True):
+        theme.panel_title("📍 Peta Kejadian Bencana", f"({periode.lower()} · {tipe})")
+        md = cur.dropna(subset=["lat", "lon"]) if {"lat", "lon"} <= set(cur.columns) else cur.iloc[0:0]
+        if md.empty:
+            st.caption("Tidak ada data dengan koordinat pada filter ini.")
+        else:
+            st.markdown(f'<div class="psub">{wil_label} · {fmt_num(len(md))} titik kejadian</div>',
+                        unsafe_allow_html=True)
+            m, t = st.columns([2.6, 1])
+            with m:
+                luas_sanitized = pd.to_numeric(md.get("luas_ha"), errors="coerce").fillna(1.0)
+                luas_sanitized = luas_sanitized.replace([np.inf, -np.inf], 1.0).clip(lower=1.0).astype(float)
+                md2 = md.assign(luas_plot=luas_sanitized.values,
+                                tipe_bencana=md["tipe_bencana"].fillna("Bencana Alam Lainnya").astype(str))
+                hover = {"provinsi": True, "tipe_bencana": True, "luas_plot": False,
+                         "lat": False, "lon": False}
+                if "luas_ha" in md2.columns:
+                    hover["luas_ha"] = ":.1f"
+                if "korban_jiwa" in md2.columns:
+                    hover["korban_jiwa"] = True
+                if pakai_ispa() and "ispa" in md2.columns:
+                    hover["ispa"] = True
+                center, zoom = peta_view(wilayah)
+                fig_m = map_scatter(md2, center, zoom, 480, color="tipe_bencana",
+                                    color_discrete_map=TIPE_COLOR, size="luas_plot", size_max=22,
+                                    hover_name="kabupaten", opacity=0.78, hover_data=hover)
+                fig_m.update_layout(legend=dict(orientation="h", y=1.02, x=0, title_text=""))
+                show(fig_m)
+            with t:
+                st.markdown('<div class="subhead">5 Provinsi dengan<br>Kejadian Terbanyak</div>',
+                            unsafe_allow_html=True)
+                top_prov = (md.groupby("provinsi").size().reset_index(name="kejadian")
+                            .sort_values("kejadian", ascending=False).head(5).reset_index(drop=True))
+                rows_html = "".join(
+                    f"<tr><td>{i + 1}</td><td>{r.provinsi}</td>"
+                    f"<td class='num'>{fmt_num(r.kejadian)}</td></tr>"
+                    for i, r in enumerate(top_prov.itertuples()))
+                st.markdown(
+                    "<table class='toptable'><tr><th>No</th><th>Provinsi</th>"
+                    f"<th class='num'>Kejadian</th></tr>{rows_html}</table>",
+                    unsafe_allow_html=True)
+    st.write("")
 
     # Baris 2 — Tren Kejadian + Jenis Bencana + Ringkasan Kondisi
     colA, colB, colC = st.columns([1, 1, 1.15])
@@ -927,71 +961,109 @@ elif page == "Data & Grafik":
                          "Tanpa Koordinat": int(hs_period[["lat", "lon"]].isna().any(axis=1).sum())})
         show_df(pd.DataFrame(rows))
 
-# ====================================================================== PETA SEBARAN
-elif page == "Peta Sebaran":
-    tabs_label = ["Kejadian Bencana"] + (["Hotspot Harian"] if pakai_hotspot() else [])
-    tabs = st.tabs(tabs_label)
-    t1 = tabs[0]
-    t2 = tabs[1] if len(tabs) > 1 else None
-    with t1:
+# ====================================================================== SEBARAN HOTSPOT
+elif page == "Sebaran Hotspot":
+    if not pakai_hotspot():
+        st.info("ℹ️ Analisis hotspot hanya tersedia untuk jenis bencana **Semua** atau **Karhutla**. "
+                "Ubah filter 'Jenis Bencana' di atas untuk melihat sebaran titik api.")
+    elif hs_f is None or hs_f.empty:
+        st.warning("Data hotspot belum tersedia pada filter ini.")
+    else:
+        # Pilih tanggal hotspot (default: terbaru)
+        tgls = sorted(hs_f["tanggal"].dt.normalize().unique(), reverse=True)
+        pick = st.selectbox("Tanggal hotspot", tgls, format_func=lambda x: tgl_id(x, True))
+        hd = hs_f[hs_f["tanggal"].dt.normalize() == pd.Timestamp(pick)]
+        hd_prev = hs_f[hs_f["tanggal"].dt.normalize() == pd.Timestamp(pick) - pd.Timedelta(days=1)]
+
+        # KPI ringkas hotspot
+        total_hd = len(hd)
+        total_prev = len(hd_prev)
+        delta_hs = delta_pct(total_hd, total_prev if total_prev > 0 else None)
+        n_prov_aktif = hd["provinsi"].nunique() if total_hd else 0
+        top1 = hd["provinsi"].value_counts().head(1)
+        high_conf = int((hd["confidence"].astype(str).str.lower() == "high").sum()) if "confidence" in hd.columns else 0
+
+        c_k1, c_k2, c_k3, c_k4 = st.columns(4)
+        with c_k1:
+            st.markdown(theme.kpi("🛰️", "Total Titik Hotspot", fmt_num(total_hd),
+                                   delta_hs, "orange", "titik"), unsafe_allow_html=True)
+        with c_k2:
+            st.markdown(theme.kpi("🗺️", "Provinsi Terdampak", fmt_num(n_prov_aktif),
+                                   None, "blue", "provinsi"), unsafe_allow_html=True)
+        with c_k3:
+            lb = top1.index[0] if len(top1) else "-"
+            st.markdown(theme.kpi("🔥", "Provinsi Hotspot Tertinggi", lb,
+                                   None, "rose", f"{fmt_num(top1.iloc[0])} titik" if len(top1) else ""),
+                        unsafe_allow_html=True)
+        with c_k4:
+            st.markdown(theme.kpi("⚠️", "Keyakinan Tinggi", fmt_num(high_conf),
+                                   None, "amber", "titik"), unsafe_allow_html=True)
+        st.write("")
+
+        # Peta hotspot + rincian
+        a, b = st.columns([2.4, 1])
+        with a, st.container(border=True):
+            theme.panel_title("Sebaran Titik Hotspot",
+                              f"({tgl_id(pick, True)} · {fmt_num(len(hd))} titik)")
+            show(hotspot_map(hd, wilayah, 520))
+            legend_hotspot()
+        with b, st.container(border=True):
+            theme.panel_title("Rincian Hotspot", "(hari dipilih)")
+            st.markdown("**5 Provinsi Tertinggi**")
+            st.markdown(top_table_html(top_hotspot_df(hd)), unsafe_allow_html=True)
+            if "confidence" in hd.columns and len(hd):
+                cg = hd["confidence"].value_counts()
+                fig = go.Figure(go.Pie(labels=cg.index, values=cg.values, hole=0.55,
+                                       marker_colors=["#93c5fd", "#2563eb", "#1e3a8a"][:len(cg)],
+                                       textinfo="label+percent"))
+                fig.update_layout(title_text="Tingkat Keyakinan", showlegend=False)
+                show(style(fig, 240, legend=False))
+
+        # Analisis: tren harian + perbandingan provinsi
+        c_t1, c_t2 = st.columns(2)
+        with c_t1, st.container(border=True):
+            theme.panel_title("Tren Hotspot Harian", f"({periode.lower()})")
+            g = hs_f.groupby(hs_f["tanggal"].dt.normalize()).size().reset_index(name="hotspot")
+            g["label"] = g["tanggal"].dt.strftime("%d %b")
+            show(tren_bar(g["label"], list(g["hotspot"]), METRIK_COLOR["hotspot"], "hotspot", height=280))
+        with c_t2, st.container(border=True):
+            theme.panel_title("Top 10 Provinsi (Periode)", f"({periode.lower()})")
+            top_g = (hs_f.groupby("provinsi").size().reset_index(name="hotspot")
+                     .sort_values("hotspot", ascending=True).tail(10))
+            fig = px.bar(top_g, x="hotspot", y="provinsi", orientation="h", text="hotspot",
+                         color_discrete_sequence=[METRIK_COLOR["hotspot"]])
+            fig.update_traces(textposition="outside", cliponaxis=False)
+            fig.update_xaxes(title=None, showgrid=False)
+            fig.update_yaxes(title=None)
+            show(style(fig, 320, legend=False))
+
+        # Analisis naratif ringkas
         with st.container(border=True):
-            theme.panel_title("Peta Kejadian Bencana", f"({periode.lower()})")
-            md = cur.dropna(subset=["lat", "lon"]) if {"lat", "lon"} <= set(cur.columns) else cur.iloc[0:0]
-            if md.empty:
-                st.warning("Tidak ada data dengan koordinat pada filter ini.")
-            else:
-                luas_sanitized = pd.to_numeric(md.get("luas_ha"), errors="coerce").fillna(1.0)
-                luas_sanitized = luas_sanitized.replace([np.inf, -np.inf], 1.0).clip(lower=1.0).astype(float)
-                md = md.assign(luas_plot=luas_sanitized.values,
-                               tipe_bencana=md["tipe_bencana"].fillna("Bencana Alam Lainnya").astype(str))
-                hover = {"provinsi": True, "tipe_bencana": True, "luas_plot": False, "lat": False, "lon": False}
-                if "luas_ha" in md.columns:
-                    hover["luas_ha"] = ":.1f"
-                if "korban_jiwa" in md.columns:
-                    hover["korban_jiwa"] = True
-                if pakai_ispa() and "ispa" in md.columns:
-                    hover["ispa"] = True
-                if tipe == "Banjir" and "tinggi_genangan_cm" in md.columns:
-                    hover["tinggi_genangan_cm"] = True
-                if tipe == "Gempa" and "magnitudo" in md.columns:
-                    hover["magnitudo"] = ":.1f"
-                center, zoom = peta_view(wilayah)
-                fig = map_scatter(md, center, zoom, 560, color="tipe_bencana", color_discrete_map=TIPE_COLOR,
-                                  size="luas_plot", size_max=22, hover_name="kabupaten", opacity=0.75,
-                                  hover_data=hover)
-                fig.update_layout(legend=dict(orientation="h", y=1.02, x=0, title_text=""))
-                show(fig)
-    if t2 is not None:
-        with t2:
-            if hs_f is None or hs_f.empty:
-                st.warning("Data hotspot belum tersedia.")
-            else:
-                tgls = sorted(hs_f["tanggal"].dt.normalize().unique(), reverse=True)
-                pick = st.selectbox("Tanggal hotspot", tgls, format_func=lambda x: tgl_id(x, True))
-                hd = hs_f[hs_f["tanggal"].dt.normalize() == pd.Timestamp(pick)]
-                a, b = st.columns([2.2, 1])
-                with a, st.container(border=True):
-                    theme.panel_title("Sebaran Hotspot", f"({tgl_id(pick, True)} · {fmt_num(len(hd))} titik)")
-                    show(hotspot_map(hd, wilayah, 540))
-                    legend_hotspot()
-                with b, st.container(border=True):
-                    theme.panel_title("5 Provinsi Tertinggi")
-                    st.markdown(top_table_html(top_hotspot_df(hd)), unsafe_allow_html=True)
-                    if "confidence" in hd.columns:
-                        cg = hd["confidence"].value_counts()
-                        fig = go.Figure(go.Pie(labels=cg.index, values=cg.values, hole=0.55,
-                                               marker_colors=["#93c5fd", "#2563eb", "#1e3a8a"][:len(cg)]))
-                        fig.update_layout(title_text="Tingkat keyakinan")
-                        show(style(fig, 250))
-            if hs_f is not None and not hs_f.empty:
-                with st.container(border=True):
-                    theme.panel_title("Tren Hotspot Harian")
-                    g = hs_f.groupby(hs_f["tanggal"].dt.normalize()).size().reset_index(name="hotspot")
-                    fig = px.area(g, x="tanggal", y="hotspot",
-                                  color_discrete_sequence=[METRIK_COLOR["hotspot"]])
-                    fig.update_xaxes(title=None)
-                    fig.update_yaxes(title=None)
-                    show(style(fig, 280, legend=False))
+            theme.panel_title("Analisis Hotspot")
+            naik_prov = (hd.groupby("provinsi").size()
+                         - hd_prev.groupby("provinsi").size().reindex(hd["provinsi"].unique()).fillna(0))
+            naik_prov = naik_prov.sort_values(ascending=False)
+            kenaikan = naik_prov[naik_prov > 0].head(3)
+            analisis = [
+                f"Pada {tgl_id(pick, True)} tercatat <b>{fmt_num(total_hd)}</b> titik hotspot di "
+                f"{wil_label}, tersebar di <b>{n_prov_aktif}</b> provinsi."
+            ]
+            if total_prev > 0:
+                pct = (total_hd - total_prev) / total_prev * 100
+                arah = "meningkat" if pct > 0 else "menurun" if pct < 0 else "stabil"
+                analisis.append(f"Dibandingkan hari sebelumnya ({fmt_num(total_prev)} titik), "
+                                f"jumlah hotspot {arah} <b>{fmt_num(abs(pct), 1)}%</b>.")
+            if len(kenaikan):
+                naik_desc = ", ".join(f"{p} (+{int(v)})" for p, v in kenaikan.items())
+                analisis.append(f"Peningkatan terbesar terjadi di {naik_desc} — perlu "
+                                "pengawasan intensif dan koordinasi tim pemadaman.")
+            if high_conf > 0:
+                pct_hc = high_conf / total_hd * 100 if total_hd else 0
+                analisis.append(f"Dari total titik, <b>{fmt_num(high_conf)} titik ({fmt_num(pct_hc, 1)}%)</b> "
+                                "berkeyakinan tinggi (High confidence) — indikasi api aktif yang perlu "
+                                "verifikasi lapangan segera.")
+            html = "".join(f"<p>• {t}</p>" for t in analisis)
+            st.markdown(f'<div class="note">{html}</div>', unsafe_allow_html=True)
 
 # ====================================================================== REKAP WILAYAH
 elif page == "Rekap Wilayah":

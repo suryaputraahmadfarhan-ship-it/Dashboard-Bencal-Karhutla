@@ -160,8 +160,9 @@ div[data-testid="stVerticalBlockBorderWrapper"]{
   overflow:hidden; }
 .kpi > div:nth-child(2){ min-width:0; flex:1; }
 .kpi-ic{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-  font-size:24px; flex:0 0 52px; }
-.kpi-lb{ font-weight:600; font-size:14px; color:#1c3d82; margin-bottom:2px; line-height:1.25; }
+  font-size:24px; flex:0 0 52px; align-self:flex-start; margin-top:4px; }
+.kpi-lb{ font-weight:600; font-size:14px; color:#1c3d82; margin-bottom:4px; line-height:1.25;
+  min-height:2.5em; display:flex; align-items:flex-end; }
 .kpi-v{ font-weight:800; font-size:clamp(22px, 2.1vw, 32px); line-height:1.1; color:var(--ink);
   letter-spacing:-.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .kpi-v small{ font-size:.52em; font-weight:600; letter-spacing:.2px; margin-left:6px; color:#1c3d82;
