@@ -37,6 +37,9 @@ KALIMANTAN = list(PROVINSI.keys())[10:]
 TIPE_BENCANA = ["Karhutla", "Banjir", "Gempa", "Bencana Alam Lainnya"]
 STATUS_LAPORAN = ["Lengkap", "Belum Lengkap", "Perlu Verifikasi"]
 PENYEBAB_KARHUTLA = ["Alam (kekeringan)", "Manusia (pembakaran lahan)", "Pertanian", "Perkebunan", "Tidak diketahui"]
+# Sub-tipe untuk 'Bencana Alam Lainnya' — WAJIB diisi agar pimpinan tahu bencana spesifik apa
+SUBTIPE_LAINNYA = ["Longsor", "Puting Beliung", "Kekeringan", "Erupsi Gunung", "Angin Kencang",
+                   "Abrasi Pantai", "Cuaca Ekstrem"]
 
 # Bobot relatif sebaran hotspot (provinsi rawan karhutla lebih berat)
 _HS_WEIGHT = {
@@ -109,9 +112,8 @@ def generate_incidents(n=1400, seed=42, start=None, end=None):
             row["pengungsi"] = int(rng.poisson(55 if row["magnitudo"] > 5 else 5))
             row["korban_jiwa"] = int(rng.poisson(0.15 if row["magnitudo"] > 5.5 else 0.01))
             row["korban_luka"] = int(rng.poisson(2.5 if row["magnitudo"] > 5 else 0.3))
-        else:  # Bencana Alam Lainnya (longsor, puting beliung, kekeringan, dsb)
-            row["penyebab"] = rng.choice(["Cuaca ekstrem", "Longsor", "Kekeringan", "Puting beliung",
-                                          "Tidak diketahui"])
+        else:  # Bencana Alam Lainnya (longsor, puting beliung, kekeringan, erupsi, dsb)
+            row["penyebab"] = rng.choice(SUBTIPE_LAINNYA)
             row["rumah_terdampak"] = int(rng.poisson(14))
             row["pengungsi"] = int(rng.poisson(40))
             row["korban_jiwa"] = int(rng.poisson(0.06))

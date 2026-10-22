@@ -245,9 +245,14 @@ def metrik_spesifik(df):
                 item["Kedalaman rata-rata (km)"] = float(g["kedalaman_km"].mean())
             if "rumah_terdampak" in g and g["rumah_terdampak"].notna().any():
                 item["Rumah terdampak"] = int(g["rumah_terdampak"].sum())
-        else:
+        else:  # Bencana Alam Lainnya
             if "rumah_terdampak" in g and g["rumah_terdampak"].notna().any():
                 item["Rumah terdampak"] = int(g["rumah_terdampak"].sum())
+            if "penyebab" in g.columns:
+                sub_counts = g["penyebab"].dropna().astype(str).value_counts()
+                sub_counts = sub_counts[sub_counts.index.str.lower() != "tidak diketahui"]
+                if len(sub_counts):
+                    item["Rincian"] = ", ".join(f"{k} ({v})" for k, v in sub_counts.items())
         item["Korban jiwa"] = int(g["korban_jiwa"].sum()) if "korban_jiwa" in g else 0
         item["Pengungsi"] = int(g["pengungsi"].sum()) if "pengungsi" in g else 0
         out.append(item)
@@ -514,6 +519,15 @@ def _ringkasan_untuk(cur_df, prev_df, jenis_lap, hs_today_df, hs_prevday_df, hs_
         if len(mg):
             perh.append(f"Magnitudo rata-rata {fmt_num(mg.mean(), 1)} SR "
                         f"(maksimum {fmt_num(mg.max(), 1)} SR).")
+    # Breakdown sub-tipe untuk Bencana Alam Lainnya (laporan)
+    if jenis_lap in ("Semua", "Bencana Alam Lainnya") and "penyebab" in cur_df.columns:
+        lain = cur_df[cur_df["tipe_bencana"] == "Bencana Alam Lainnya"]
+        if len(lain):
+            sub = lain["penyebab"].dropna().astype(str).value_counts()
+            sub = sub[sub.index.str.lower() != "tidak diketahui"]
+            if len(sub):
+                desc = ", ".join(f"{k} ({v})" for k, v in sub.head(5).items())
+                perh.append(f"Rincian 'Bencana Alam Lainnya' meliputi: {desc}.")
     kj = cur_df.groupby("provinsi")["korban_jiwa"].sum().sort_values(ascending=False)
     if kj.sum() > 0:
         perh.append(f"Korban jiwa tercatat {fmt_num(kj.sum())} orang, terbanyak di {kj.index[0]} "
@@ -573,6 +587,15 @@ def ringkasan():
         if rt.sum() > 0:
             perhatian.append(f"Rumah terdampak tercatat {fmt_num(rt.sum())} unit, terbanyak di "
                              f"{rt.index[0]} ({fmt_num(rt.iloc[0])} unit).")
+    # Breakdown sub-tipe untuk 'Bencana Alam Lainnya'
+    if tipe in ("Semua", "Bencana Alam Lainnya") and "penyebab" in cur.columns:
+        lain = cur[cur["tipe_bencana"] == "Bencana Alam Lainnya"]
+        if len(lain):
+            sub = lain["penyebab"].dropna().astype(str).value_counts()
+            sub = sub[sub.index.str.lower() != "tidak diketahui"]
+            if len(sub):
+                desc = ", ".join(f"{k} ({v})" for k, v in sub.head(4).items())
+                perhatian.append(f"Rincian 'Bencana Alam Lainnya' meliputi: {desc}.")
     if tipe == "Banjir" and "tinggi_genangan_cm" in cur.columns:
         tg = pd.to_numeric(cur["tinggi_genangan_cm"], errors="coerce").dropna()
         if len(tg):
@@ -1193,8 +1216,24 @@ elif page == "Rekap Wilayah":
             st.caption("Tidak ada kejadian pada periode ini.")
         else:
             # Kolom "Jenis Bencana" per kabupaten agar tidak ambigu
-            jenis_kab = (d.groupby("kabupaten")["tipe_bencana"]
-                         .apply(lambda s: ", ".join(sorted(set(s)))).reset_index(name="jenis_bencana"))
+            def _jenis_lengkap(df_kab):
+                """Tampilkan jenis bencana per kabupaten; untuk 'Bencana Alam Lainnya'
+                sertakan sub-tipe dari kolom penyebab. Mis. 'Bencana Alam Lainnya (Longsor,
+                Kekeringan)'."""
+                items = []
+                for tp in sorted(df_kab["tipe_bencana"].unique()):
+                    if tp == "Bencana Alam Lainnya" and "penyebab" in df_kab.columns:
+                        sub = (df_kab[df_kab["tipe_bencana"] == tp]["penyebab"]
+                               .dropna().astype(str).unique().tolist())
+                        sub = [s for s in sub if s and s.lower() != "tidak diketahui"]
+                        if sub:
+                            items.append(f"{tp} ({', '.join(sorted(set(sub)))})")
+                            continue
+                    items.append(tp)
+                return ", ".join(items)
+
+            jenis_kab = (d.groupby("kabupaten")
+                         .apply(_jenis_lengkap).reset_index(name="jenis_bencana"))
             aggs = {"kejadian": ("tipe_bencana", "size"), "luas_ha": ("luas_ha", "sum"),
                     "korban_jiwa": ("korban_jiwa", "sum"), "pengungsi": ("pengungsi", "sum"),
                     "ispa": ("ispa", "sum")}

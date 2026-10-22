@@ -232,8 +232,9 @@ def _desc_perkembangan(prov, jenis, g, hs_prov):
         bits.append(s)
         if rt:
             bits.append(f"Teridentifikasi {fmt_num(rt)} rumah terdampak akibat guncangan.")
-    else:
+    else:  # Bencana Alam Lainnya
         rt = int(g.get("rumah_terdampak", pd.Series([0])).iloc[0] or 0)
+        subtipe = g.get("subtipe_lainnya", pd.Series([""])).iloc[0] if "subtipe_lainnya" in g.columns else ""
         s = f"Tercatat {fmt_num(n)} kejadian bencana alam lainnya"
         if jml_kab:
             s += f" di {jml_kab} kabupaten/kota"
@@ -241,6 +242,8 @@ def _desc_perkembangan(prov, jenis, g, hs_prov):
             s += f" (antara lain di {kabs})"
         s += "."
         bits.append(s)
+        if subtipe:
+            bits.append(f"Rincian jenis bencana: {subtipe}.")
         if rt:
             bits.append(f"Dampak fisik mencakup {fmt_num(rt)} rumah terdampak.")
     return " ".join(bits) if bits else "Belum terdapat data signifikan pada periode pelaporan."
@@ -378,9 +381,19 @@ def _analisis(jenis, ctx):
         teks.append("Dampak gempa mencakup kerusakan bangunan, gangguan aktivitas ekonomi, dan risiko "
                     "gempa susulan yang memerlukan kesiapan evakuasi berkelanjutan.")
     elif jenis == "Bencana Alam Lainnya":
-        teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian bencana "
-                    "alam lainnya (longsor, puting beliung, kekeringan, dsb). Pola kejadian umumnya "
-                    "berkaitan dengan kondisi cuaca ekstrem dan karakteristik topografi wilayah.")
+        # Breakdown sub-tipe (Longsor, Puting Beliung, Erupsi Gunung, dsb.)
+        df_cur = ctx.get("df_cur")
+        sub_desc = ""
+        if df_cur is not None and "penyebab" in df_cur.columns:
+            sub = df_cur["penyebab"].dropna().astype(str).value_counts()
+            sub = sub[sub.index.str.lower() != "tidak diketahui"]
+            if len(sub):
+                sub_desc = (" Rincian jenis bencana mencakup: "
+                            + ", ".join(f"{k} ({v} kejadian)" for k, v in sub.head(6).items()) + ".")
+        teks.append(f"Pada periode {ctx['periode']}, tercatat total {fmt_num(cur_total)} kejadian "
+                    f"bencana alam lainnya (longsor, puting beliung, erupsi gunung, kekeringan, dsb) "
+                    f"di wilayah {ctx['wilayah']}.{sub_desc} Pola kejadian umumnya berkaitan dengan "
+                    "kondisi cuaca ekstrem dan karakteristik topografi wilayah.")
         teks.append("Pemetaan daerah rawan, penguatan sistem peringatan dini, dan edukasi masyarakat "
                     "menjadi kunci mitigasi risiko ke depan.")
     else:
@@ -579,6 +592,19 @@ def _bangun_perprovinsi_agg(df_cur, hs_today_df):
         "daftar_kabupaten")
     jmlkab = df_cur.groupby("provinsi")["kabupaten"].nunique().rename("jml_kab")
     g = g.join(kabs).join(jmlkab)
+
+    # Breakdown sub-tipe untuk 'Bencana Alam Lainnya' (dari kolom penyebab)
+    if "penyebab" in df_cur.columns:
+        def _subtipe_lain(s):
+            vc = s.dropna().astype(str).value_counts()
+            vc = vc[vc.index.str.lower() != "tidak diketahui"]
+            return ", ".join(f"{k} ({v})" for k, v in vc.head(5).items()) if len(vc) else ""
+        lain_only = df_cur[df_cur["tipe_bencana"] == "Bencana Alam Lainnya"]
+        if not lain_only.empty:
+            sub = lain_only.groupby("provinsi")["penyebab"].apply(_subtipe_lain).rename("subtipe_lainnya")
+            g = g.join(sub, how="left")
+        else:
+            g["subtipe_lainnya"] = ""
 
     if hs_today_df is not None and not hs_today_df.empty:
         hs_count = hs_today_df.groupby("provinsi").size().rename("hotspot")
