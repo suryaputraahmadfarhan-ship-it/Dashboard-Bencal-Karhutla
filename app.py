@@ -272,8 +272,8 @@ if "dimuat" not in st.session_state:
     st.session_state["dimuat"] = datetime.now(WIB).strftime("%H.%M WIB")
 
 # ====================================================================== sidebar
-PAGES = [("🏠", "Beranda"), ("📊", "Data & Grafik"), ("🛰️", "Sebaran Hotspot"), ("🗂️", "Rekap Wilayah"),
-         ("📄", "Laporan")]
+PAGES = [("🏠", "Beranda"), ("📊", "Data & Grafik"), ("🗂️", "Rekap Wilayah"),
+         ("🛰️", "Sebaran Hotspot"), ("📄", "Laporan")]
 if is_admin():
     PAGES.append(("⚙️", "Pengelolaan Data"))
 ICON = dict((n, i) for i, n in PAGES)
@@ -662,6 +662,7 @@ if page == "Beranda":
     st.write("")
 
     # Baris 1 — Peta Kejadian Bencana (semua jenis sesuai filter), full-width
+    # ----- Row 1: Peta Kejadian Bencana (FULL WIDTH) -----
     with st.container(border=True):
         theme.panel_title("📍 Peta Kejadian Bencana", f"({periode.lower()} · {tipe})")
         md = cur.dropna(subset=["lat", "lon"]) if {"lat", "lon"} <= set(cur.columns) else cur.iloc[0:0]
@@ -670,48 +671,49 @@ if page == "Beranda":
         else:
             st.markdown(f'<div class="psub">{wil_label} · {fmt_num(len(md))} titik kejadian</div>',
                         unsafe_allow_html=True)
-            m, t = st.columns([2.6, 1])
-            with m:
-                luas_sanitized = pd.to_numeric(md.get("luas_ha"), errors="coerce").fillna(1.0)
-                luas_sanitized = luas_sanitized.replace([np.inf, -np.inf], 1.0).clip(lower=1.0).astype(float)
-                md2 = md.assign(luas_plot=luas_sanitized.values,
-                                tipe_bencana=md["tipe_bencana"].fillna("Bencana Alam Lainnya").astype(str))
-                hover = {"provinsi": True, "tipe_bencana": True, "luas_plot": False,
-                         "lat": False, "lon": False}
-                if "luas_ha" in md2.columns:
-                    hover["luas_ha"] = ":.1f"
-                if "korban_jiwa" in md2.columns:
-                    hover["korban_jiwa"] = True
-                if pakai_ispa() and "ispa" in md2.columns:
-                    hover["ispa"] = True
-                center, zoom = peta_view(wilayah)
-                fig_m = map_scatter(md2, center, zoom, 480, color="tipe_bencana",
-                                    color_discrete_map=TIPE_COLOR, size="luas_plot", size_max=22,
-                                    hover_name="kabupaten", opacity=0.78, hover_data=hover)
-                fig_m.update_layout(legend=dict(orientation="h", y=1.02, x=0, title_text=""))
-                show(fig_m)
-            with t:
-                st.markdown('<div class="subhead">5 Provinsi dengan<br>Kejadian Terbanyak</div>',
-                            unsafe_allow_html=True)
-                top_prov = (md.groupby("provinsi").size().reset_index(name="kejadian")
-                            .sort_values("kejadian", ascending=False).head(5).reset_index(drop=True))
-                rows_html = "".join(
-                    f"<tr><td>{i + 1}</td><td>{r.provinsi}</td>"
-                    f"<td class='num'>{fmt_num(r.kejadian)}</td></tr>"
-                    for i, r in enumerate(top_prov.itertuples()))
-                st.markdown(
-                    "<table class='toptable'><tr><th>No</th><th>Provinsi</th>"
-                    f"<th class='num'>Kejadian</th></tr>{rows_html}</table>",
-                    unsafe_allow_html=True)
+            luas_sanitized = pd.to_numeric(md.get("luas_ha"), errors="coerce").fillna(1.0)
+            luas_sanitized = luas_sanitized.replace([np.inf, -np.inf], 1.0).clip(lower=1.0).astype(float)
+            md2 = md.assign(luas_plot=luas_sanitized.values,
+                            tipe_bencana=md["tipe_bencana"].fillna("Bencana Alam Lainnya").astype(str))
+            hover = {"provinsi": True, "tipe_bencana": True, "luas_plot": False,
+                     "lat": False, "lon": False}
+            if "luas_ha" in md2.columns:
+                hover["luas_ha"] = ":.1f"
+            if "korban_jiwa" in md2.columns:
+                hover["korban_jiwa"] = True
+            if pakai_ispa() and "ispa" in md2.columns:
+                hover["ispa"] = True
+            center, zoom = peta_view(wilayah)
+            fig_m = map_scatter(md2, center, zoom, 520, color="tipe_bencana",
+                                color_discrete_map=TIPE_COLOR, size="luas_plot", size_max=22,
+                                hover_name="kabupaten", opacity=0.78, hover_data=hover)
+            fig_m.update_layout(legend=dict(orientation="h", y=1.02, x=0, title_text=""))
+            show(fig_m)
     st.write("")
 
-    # Baris 2 — Tren Kejadian + Jenis Bencana + Ringkasan Kondisi
-    colA, colB, colC = st.columns([1, 1, 1.15])
+    # ----- Row 2: 5 Provinsi Teratas | Tren Kejadian | Jenis Bencana -----
+    col_prov, col_tren, col_jenis = st.columns([1, 1.1, 1.1])
 
-    with colA, st.container(border=True):
+    with col_prov, st.container(border=True):
+        theme.panel_title("🏷️ 5 Provinsi Teratas", "(kejadian terbanyak)")
+        if cur.empty:
+            st.caption("Tidak ada data pada filter ini.")
+        else:
+            top_prov = (cur.groupby("provinsi").size().reset_index(name="kejadian")
+                        .sort_values("kejadian", ascending=False).head(5).reset_index(drop=True))
+            rows_html = "".join(
+                f"<tr><td>{i + 1}</td><td>{r.provinsi}</td>"
+                f"<td class='num'>{fmt_num(r.kejadian)}</td></tr>"
+                for i, r in enumerate(top_prov.itertuples()))
+            st.markdown(
+                "<table class='toptable'><tr><th>No</th><th>Provinsi</th>"
+                f"<th class='num'>Kejadian</th></tr>{rows_html}</table>",
+                unsafe_allow_html=True)
+
+    with col_tren, st.container(border=True):
         if days is None or days > 30:
             gran = "bulanan"
-        elif days > 7:
+        elif days > 14:
             gran = "mingguan"
         else:
             gran = "harian"
@@ -719,7 +721,7 @@ if page == "Beranda":
         if cur.empty:
             st.caption("Tidak ada data pada filter ini.")
         else:
-            if days is not None and days <= 7:
+            if days is not None and days <= 14:
                 idx = pd.date_range(end_date - pd.Timedelta(days=max(days - 1, 0)), end_date)
                 s = cur.groupby(cur["tanggal"].dt.normalize()).size().reindex(idx, fill_value=0)
                 labels = [tgl_id(i) for i in s.index]
@@ -731,7 +733,7 @@ if page == "Beranda":
                 labels = [i.strftime("%b %Y") for i in s.index]
             show(tren_bar(labels, list(s.values), METRIK_COLOR["kejadian"], "kejadian", height=280))
 
-    with colB, st.container(border=True):
+    with col_jenis, st.container(border=True):
         theme.panel_title("🧭 Jenis Bencana", "(Jumlah Kejadian)")
         if cur.empty:
             st.caption("Tidak ada data pada filter ini.")
@@ -752,8 +754,10 @@ if page == "Beranda":
                          f'<div class="vl">{fmt_num(v)}</div>'
                          f'<div class="pc">({fmt_num(v / len(cur) * 100, 1)}%)</div></div>')
             st.markdown(html, unsafe_allow_html=True)
+    st.write("")
 
-    with colC, st.container(border=True):
+    # ----- Row 3: Ringkasan Kondisi (full-width, dengan perhatian di dalam) -----
+    with st.container(border=True):
         theme.panel_title("📝 Ringkasan Kondisi")
         st.markdown(f'<div class="note"><p>{narasi}</p></div>', unsafe_allow_html=True)
         if perhatian:
@@ -804,7 +808,7 @@ elif page == "Data & Grafik":
             series = _metrik_tren(tipe)
             if days is None or days > 30:
                 freq, label_fmt, granularity = "M", "%b %Y", "bulanan"
-            elif days > 7:
+            elif days > 14:
                 freq, label_fmt, granularity = "W", "%d %b", "mingguan"
             else:
                 freq, label_fmt, granularity = "D", "%d %b", "harian"
@@ -858,7 +862,7 @@ elif page == "Data & Grafik":
         # Granularity: >30 hari = bulanan, >7 = mingguan, else harian — konsisten di seluruh dashboard
         if days is None or days > 30:
             freq, label_fmt, granularity = "M", "%b %Y", "bulanan"
-        elif days > 7:
+        elif days > 14:
             freq, label_fmt, granularity = "W", "%d %b", "mingguan"
         else:
             freq, label_fmt, granularity = "D", "%d %b", "harian"
@@ -963,10 +967,9 @@ elif page == "Data & Grafik":
 
 # ====================================================================== SEBARAN HOTSPOT
 elif page == "Sebaran Hotspot":
-    if not pakai_hotspot():
-        st.info("ℹ️ Analisis hotspot hanya tersedia untuk jenis bencana **Semua** atau **Karhutla**. "
-                "Ubah filter 'Jenis Bencana' di atas untuk melihat sebaran titik api.")
-    elif hs_f is None or hs_f.empty:
+    st.caption("🔥 Hotspot (titik api) merupakan indikator **karhutla**; halaman ini "
+               "fokus pada karhutla terlepas dari pilihan filter jenis bencana.")
+    if hs_f is None or hs_f.empty:
         st.warning("Data hotspot belum tersedia pada filter ini.")
     else:
         # Pilih tanggal hotspot (default: terbaru)
@@ -1019,16 +1022,26 @@ elif page == "Sebaran Hotspot":
                 fig.update_layout(title_text="Tingkat Keyakinan", showlegend=False)
                 show(style(fig, 240, legend=False))
 
-        # Analisis: tren harian + perbandingan provinsi
+        # Analisis: tren hotspot + top provinsi (gunakan hs_period yg sudah terfilter periode)
+        hs_scope = hs_period if hs_period is not None and not hs_period.empty else hs_f
+        if days is None or days > 30:
+            freq, label_fmt, gran_h = "M", "%b %Y", "bulanan"
+        elif days > 14:
+            freq, label_fmt, gran_h = "W", "%d %b", "mingguan"
+        else:
+            freq, label_fmt, gran_h = "D", "%d %b", "harian"
+
         c_t1, c_t2 = st.columns(2)
         with c_t1, st.container(border=True):
-            theme.panel_title("Tren Hotspot Harian", f"({periode.lower()})")
-            g = hs_f.groupby(hs_f["tanggal"].dt.normalize()).size().reset_index(name="hotspot")
-            g["label"] = g["tanggal"].dt.strftime("%d %b")
+            theme.panel_title(f"Tren Hotspot {gran_h.capitalize()}", f"({periode.lower()})")
+            tt_h = hs_scope.copy()
+            tt_h["grp"] = tt_h["tanggal"].dt.to_period(freq).dt.start_time
+            g = tt_h.groupby("grp").size().reset_index(name="hotspot")
+            g["label"] = g["grp"].dt.strftime(label_fmt)
             show(tren_bar(g["label"], list(g["hotspot"]), METRIK_COLOR["hotspot"], "hotspot", height=280))
         with c_t2, st.container(border=True):
-            theme.panel_title("Top 10 Provinsi (Periode)", f"({periode.lower()})")
-            top_g = (hs_f.groupby("provinsi").size().reset_index(name="hotspot")
+            theme.panel_title("Top 10 Provinsi", f"({periode.lower()})")
+            top_g = (hs_scope.groupby("provinsi").size().reset_index(name="hotspot")
                      .sort_values("hotspot", ascending=True).tail(10))
             fig = px.bar(top_g, x="hotspot", y="provinsi", orientation="h", text="hotspot",
                          color_discrete_sequence=[METRIK_COLOR["hotspot"]])
@@ -1150,7 +1163,7 @@ elif page == "Rekap Wilayah":
             # Filter spesifik → tren kejadian jenis itu di provinsi (threshold konsisten 30/7 hari)
             if days is None or days > 30:
                 freq, label_fmt, granularity = "M", "%b %Y", "bulanan"
-            elif days > 7:
+            elif days > 14:
                 freq, label_fmt, granularity = "W", "%d %b", "mingguan"
             else:
                 freq, label_fmt, granularity = "D", "%d %b", "harian"
