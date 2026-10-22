@@ -331,12 +331,13 @@ def render_tab_buat_laporan(user, admin, base_df=None):
                                          "dipadamkan dan 10 ha belum padam. 45 warga mengungsi, 18 kasus ISPA "
                                          "tercatat. Terpantau 12 titik api di sekitar lokasi."),
                             height=180)
-        c1, c2, c3 = st.columns([1, 1, 1])
-        pratinjau = c1.form_submit_button("🔍 Pratinjau Ekstraksi")
-        simpan = c2.form_submit_button("💾 Simpan Laporan", type="primary")
-        tambahkan_ke_data = c3.checkbox("Tambahkan juga ke data dashboard (sesi)",
-                                        value=False, help="Baris baru akan muncul di tabel/peta/rekap. "
-                                                          "Hanya aktif selama sesi berjalan.")
+        tambahkan_ke_data = st.checkbox("Tambahkan juga ke data dashboard (sesi)",
+                                        value=False,
+                                        help="Baris baru akan muncul di tabel/peta/rekap. "
+                                             "Hanya aktif selama sesi berjalan.")
+        c1, c2, _spacer = st.columns([1, 1, 3])
+        pratinjau = c1.form_submit_button("🔍 Pratinjau Ekstraksi", use_container_width=True)
+        simpan = c2.form_submit_button("💾 Simpan Laporan", type="primary", use_container_width=True)
 
     if pratinjau or simpan:
         ek = analisis_teks(teks)
