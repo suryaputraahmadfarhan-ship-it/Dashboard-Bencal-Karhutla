@@ -394,19 +394,27 @@ dashboard serta mengunduh laporan ringkas.""")
     st.stop()
 
 # ====================================================================== filter bar
-# Sebaran Hotspot dipakem ke Karhutla (hotspot = indikator karhutla), gunakan key berbeda
-# agar pilihan jenis bencana di halaman lain tidak terpengaruh.
+# - Sebaran Hotspot: dipakem ke Karhutla (hotspot = indikator karhutla).
+# - Laporan: dropdown Jenis Bencana disembunyikan (jenis dipilih via tombol unduh).
 with st.container(border=True):
-    f1, f2, f3 = st.columns(3)
-    if page == "Sebaran Hotspot":
-        f1.selectbox("Jenis Bencana", ["Karhutla"], key="f_tipe_hotspot",
-                     disabled=True, help="Dipakem ke Karhutla karena hotspot adalah indikator karhutla.")
-        tipe = "Karhutla"
+    if page == "Laporan":
+        # Hanya Periode + Wilayah (jenis dipilih lewat tombol unduh di halaman Laporan)
+        f1, f2 = st.columns(2)
+        tipe = "Semua"  # basis data: semua jenis
+        periode = f1.selectbox("Periode", list(PERIODE), key="f_periode")
+        wilayah = f2.selectbox("Wilayah", wilayah_options(sorted(inc_all["provinsi"].dropna().unique())),
+                               key="f_wilayah")
     else:
-        tipe = f1.selectbox("Jenis Bencana", ["Semua"] + tipe_tersedia(inc_all), key="f_tipe")
-    periode = f2.selectbox("Periode", list(PERIODE), key="f_periode")
-    wilayah = f3.selectbox("Wilayah", wilayah_options(sorted(inc_all["provinsi"].dropna().unique())),
-                           key="f_wilayah")
+        f1, f2, f3 = st.columns(3)
+        if page == "Sebaran Hotspot":
+            f1.selectbox("Jenis Bencana", ["Karhutla"], key="f_tipe_hotspot",
+                         disabled=True, help="Dipakem ke Karhutla karena hotspot adalah indikator karhutla.")
+            tipe = "Karhutla"
+        else:
+            tipe = f1.selectbox("Jenis Bencana", ["Semua"] + tipe_tersedia(inc_all), key="f_tipe")
+        periode = f2.selectbox("Periode", list(PERIODE), key="f_periode")
+        wilayah = f3.selectbox("Wilayah", wilayah_options(sorted(inc_all["provinsi"].dropna().unique())),
+                               key="f_wilayah")
 
 days = PERIODE[periode]
 prov_list = wilayah_provinsi(wilayah)
