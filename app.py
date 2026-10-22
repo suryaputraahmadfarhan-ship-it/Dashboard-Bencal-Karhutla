@@ -380,9 +380,16 @@ dashboard serta mengunduh laporan ringkas.""")
     st.stop()
 
 # ====================================================================== filter bar
+# Sebaran Hotspot dipakem ke Karhutla (hotspot = indikator karhutla), gunakan key berbeda
+# agar pilihan jenis bencana di halaman lain tidak terpengaruh.
 with st.container(border=True):
     f1, f2, f3 = st.columns(3)
-    tipe = f1.selectbox("Jenis Bencana", ["Semua"] + tipe_tersedia(inc_all), key="f_tipe")
+    if page == "Sebaran Hotspot":
+        f1.selectbox("Jenis Bencana", ["Karhutla"], key="f_tipe_hotspot",
+                     disabled=True, help="Dipakem ke Karhutla karena hotspot adalah indikator karhutla.")
+        tipe = "Karhutla"
+    else:
+        tipe = f1.selectbox("Jenis Bencana", ["Semua"] + tipe_tersedia(inc_all), key="f_tipe")
     periode = f2.selectbox("Periode", list(PERIODE), key="f_periode")
     wilayah = f3.selectbox("Wilayah", wilayah_options(sorted(inc_all["provinsi"].dropna().unique())),
                            key="f_wilayah")
@@ -1105,7 +1112,10 @@ elif page == "Rekap Wilayah":
     for c in ["kejadian", "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]:
         if c in tabel.columns:
             tabel[c] = tabel[c].astype(int)
-    tabel = tabel.sort_values("kejadian", ascending=False).reset_index(drop=True)
+    # Urutan GEOGRAFIS: Sumatera utara→selatan (Aceh→Lampung) lalu Kalimantan — ikut urutan PROVINSI dict
+    urutan = {p: i for i, p in enumerate(PROVINSI.keys())}
+    tabel["_ord"] = tabel["provinsi"].map(urutan).fillna(999)
+    tabel = tabel.sort_values("_ord").drop(columns="_ord").reset_index(drop=True)
 
     # Kolom yang ditampilkan sesuai jenis bencana
     kolom_umum = ["provinsi", "kejadian", "korban_jiwa", "pengungsi"]
@@ -1245,9 +1255,13 @@ elif page == "Laporan":
 
         per_tipe_j = agg_tipe(cur_j)
         per_prov_j = agg_prov(cur_j)
+        # Urutan GEOGRAFIS (Aceh→Lampung lalu Kalimantan) sesuai PROVINSI dict
+        urutan_prov = {p: i for i, p in enumerate(PROVINSI)}
         per_prov_full_j = (per_prov_j.set_index("provinsi")
-                           .reindex(daftar_prov).fillna(0).reset_index()
-                           .sort_values("kejadian", ascending=False).reset_index(drop=True))
+                           .reindex(daftar_prov).fillna(0).reset_index())
+        per_prov_full_j["_ord"] = per_prov_full_j["provinsi"].map(urutan_prov).fillna(999)
+        per_prov_full_j = (per_prov_full_j.sort_values("_ord").drop(columns="_ord")
+                           .reset_index(drop=True))
         for c in ["kejadian", "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak"]:
             if c in per_prov_full_j.columns:
                 per_prov_full_j[c] = per_prov_full_j[c].astype(int)
@@ -1397,9 +1411,13 @@ elif page == "Laporan":
             st.markdown("##### Unduhan lain (Excel & Data mentah)")
             per_tipe_all = agg_tipe(cur_all)
             per_prov_all = agg_prov(cur_all)
+            # Urut geografis (Aceh→Lampung→Kalimantan) sesuai PROVINSI dict
+            urutan_prov_all = {p: i for i, p in enumerate(PROVINSI)}
             per_prov_full_all = (per_prov_all.set_index("provinsi")
-                                 .reindex(daftar_prov).fillna(0).reset_index()
-                                 .sort_values("kejadian", ascending=False).reset_index(drop=True))
+                                 .reindex(daftar_prov).fillna(0).reset_index())
+            per_prov_full_all["_ord"] = per_prov_full_all["provinsi"].map(urutan_prov_all).fillna(999)
+            per_prov_full_all = (per_prov_full_all.sort_values("_ord").drop(columns="_ord")
+                                 .reset_index(drop=True))
             sheets = {"Rekap Provinsi (15)": per_prov_full_all, "Rekap Jenis": per_tipe_all}
             if is_admin():
                 sheets = {"Data Kejadian": bersihkan(cur_all), **sheets}

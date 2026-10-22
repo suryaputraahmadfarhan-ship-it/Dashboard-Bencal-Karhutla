@@ -12,7 +12,10 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt, RGBColor
 
+from data_generator import PROVINSI
 from data_utils import fmt_num
+
+PROV_URUT = {p: i for i, p in enumerate(PROVINSI.keys())}
 
 NAVY = RGBColor(0x0F, 0x2A, 0x5C)
 ABU = RGBColor(0x47, 0x55, 0x69)
@@ -582,7 +585,10 @@ def _bangun_perprovinsi_agg(df_cur, hs_today_df):
         g = g.join(hs_count, how="left")
     else:
         g["hotspot"] = 0
-    g = g.sort_values("kejadian", ascending=False).reset_index()
+    # Urut GEOGRAFIS: Sumatera (Aceh→Lampung→Babel→Kepri) lalu Kalimantan (Kalbar→Kaltara)
+    g = g.reset_index()
+    g["_ord"] = g["provinsi"].map(PROV_URUT).fillna(999)
+    g = g.sort_values("_ord").drop(columns="_ord").reset_index(drop=True)
     return g
 
 

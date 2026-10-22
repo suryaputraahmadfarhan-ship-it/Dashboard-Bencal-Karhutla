@@ -156,9 +156,10 @@ div[data-testid="stVerticalBlockBorderWrapper"]{
 
 /* ------------------------------------------------ KPI */
 .kpi{ display:flex; gap:14px; align-items:center; padding:16px 18px; border-radius:16px;
-  border:1px solid; box-shadow: 0 4px 16px rgba(18,48,122,.05); height:100%; min-height:118px;
-  overflow:hidden; }
-.kpi > div:nth-child(2){ min-width:0; flex:1; }
+  border:1px solid; box-shadow: 0 4px 16px rgba(18,48,122,.05);
+  width:100%; box-sizing:border-box; height:140px; overflow:hidden; }
+.kpi > div:nth-child(2){ min-width:0; flex:1; display:flex; flex-direction:column;
+  justify-content:center; }
 .kpi-ic{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center;
   font-size:24px; flex:0 0 52px; align-self:flex-start; margin-top:4px; }
 .kpi-lb{ font-weight:600; font-size:14px; color:#1c3d82; margin-bottom:4px; line-height:1.25;
