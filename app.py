@@ -1270,9 +1270,6 @@ elif page == "Rekap Wilayah":
 
 # ====================================================================== LAPORAN
 elif page == "Laporan":
-    kpi_row()
-    st.write("")
-
     # Data basis "wilayah+periode saja" (tanpa filter tipe), supaya tiap tombol per-jenis
     # bisa ambil subset tipe sendiri.
     inc_wilayah = inc_all[inc_all["provinsi"].isin(prov_list)] if prov_list else inc_all
