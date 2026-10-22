@@ -317,7 +317,7 @@ def _tipe_ke_df_row(ek, petugas):
     return rows
 
 
-def render_tab_buat_laporan(user, admin):
+def render_tab_buat_laporan(user, admin, base_df=None):
     st.markdown("Tulis atau tempel laporan dari petugas wilayah. Dashboard akan **mengekstrak** "
                 "tanggal, lokasi, jenis bencana, dan angka dampak secara otomatis.")
 
@@ -358,12 +358,33 @@ def render_tab_buat_laporan(user, admin):
             st.success(f"Laporan **{rec['judul']}** tersimpan ke sesi.")
             if tambahkan_ke_data:
                 rows = _tipe_ke_df_row(ek, user["name"])
-                base = st.session_state.get("up_inc")
                 extra = pd.DataFrame(rows)
+                # Base: pakai up_inc existing; kalau belum ada, pakai base_df dari halaman
+                # (biasanya data demo yang sedang aktif) agar data lama tidak hilang.
+                base = st.session_state.get("up_inc")
+                if base is None and base_df is not None and not base_df.empty:
+                    base = base_df.copy()
                 merged = pd.concat([base, extra], ignore_index=True) if base is not None else extra
                 st.session_state["up_inc"] = merged
                 st.session_state["src"] = "upload"
-                st.info(f"{len(rows)} baris kejadian ditambahkan ke dataset dashboard (mode upload).")
+                st.info(f"{len(rows)} baris kejadian ditambahkan ke dataset dashboard "
+                        f"(total sekarang: {len(merged)} baris).")
+
+    # Indikator mode dataset + tombol reset
+    if st.session_state.get("src") == "upload" and st.session_state.get("up_inc") is not None:
+        n_rows = len(st.session_state["up_inc"])
+        colA, colB = st.columns([3, 1])
+        colA.info(f"ℹ️ Dataset dashboard saat ini mode **upload** ({n_rows} baris). "
+                  "Berisi data demo + baris laporan teks yang pernah ditambahkan.")
+        if colB.button("🔄 Reset ke data demo", key="reset_demo",
+                       help="Hapus tambahan laporan teks dari dataset dashboard dan kembali ke data demo."):
+            st.session_state.pop("up_inc", None)
+            st.session_state.pop("up_hs", None)
+            st.session_state.pop("sig_inc", None)
+            st.session_state.pop("sig_hs", None)
+            st.session_state["src"] = "demo"
+            st.success("Dataset dikembalikan ke data demo.")
+            st.rerun()
 
     # Daftar laporan tersimpan di sesi
     daftar = _state()

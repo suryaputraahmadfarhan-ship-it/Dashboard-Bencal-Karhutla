@@ -1481,7 +1481,7 @@ elif page == "Laporan":
 
     with tab_buat:
         from laporan_teks import render_tab_buat_laporan  # noqa: WPS433
-        render_tab_buat_laporan(user, is_admin())
+        render_tab_buat_laporan(user, is_admin(), base_df=inc_all)
 
 st.divider()
 st.caption("Dashboard Kebencanaan · Direktorat 2.3 Deputi 2 BIN · Wilayah Sumatera & Kalimantan")
