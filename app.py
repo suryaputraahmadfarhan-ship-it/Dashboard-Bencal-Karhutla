@@ -990,19 +990,7 @@ elif page == "Data & Grafik":
                 show(tren_bar(w["label"], vals, METRIK_COLOR.get(metric, "#2563eb"), metric, height=260))
     with t3:
         st.markdown("**Data kejadian (sesuai filter)**")
-        show_df(bersihkan(cur), height=360)
-        st.markdown("**Profil kualitas data**")
-        rows = [{"Sumber": "Kejadian", "Jumlah Record": len(cur), "Kolom": cur.shape[1],
-                 "Nilai Kosong": int(cur.isna().sum().sum()),
-                 "% Kosong": round(cur.isna().sum().sum() / max(cur.size, 1) * 100, 2),
-                 "Tanpa Koordinat": int(cur[["lat", "lon"]].isna().any(axis=1).sum())
-                 if {"lat", "lon"} <= set(cur.columns) else 0}]
-        if hs_period is not None and not hs_period.empty:
-            rows.append({"Sumber": "Hotspot", "Jumlah Record": len(hs_period), "Kolom": hs_period.shape[1],
-                         "Nilai Kosong": int(hs_period.isna().sum().sum()),
-                         "% Kosong": round(hs_period.isna().sum().sum() / max(hs_period.size, 1) * 100, 2),
-                         "Tanpa Koordinat": int(hs_period[["lat", "lon"]].isna().any(axis=1).sum())})
-        show_df(pd.DataFrame(rows))
+        show_df(bersihkan(cur), height=420)
 
 # ====================================================================== SEBARAN HOTSPOT
 elif page == "Sebaran Hotspot":
