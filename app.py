@@ -275,8 +275,27 @@ def demo_data(hari):
 
 
 def load_data():
+    import laporan_store
+    # Upload CSV admin selalu menang
     if st.session_state.get("src") == "upload" and st.session_state.get("up_inc") is not None:
         return st.session_state["up_inc"], st.session_state.get("up_hs"), False
+
+    # Supabase: kalau configured dan ada data → mode PRODUCTION (data real)
+    if laporan_store.is_configured():
+        df_sb = laporan_store.fetch_all()
+        inc_sb = laporan_store.to_inc_df(df_sb) if not df_sb.empty else pd.DataFrame()
+        tampilkan_demo = st.session_state.get("show_demo", False)
+        if not inc_sb.empty and not tampilkan_demo:
+            # Mode PRODUCTION: hanya data Supabase (demo disembunyikan)
+            inc_demo, hs_demo = demo_data(today_wib().isoformat())
+            # pakai hotspot demo saja (hotspot tidak di-input manual)
+            return inc_sb, hs_demo, False
+        if not inc_sb.empty and tampilkan_demo:
+            # Mode CAMPUR: data real + demo (toggle admin)
+            inc_demo, hs_demo = demo_data(today_wib().isoformat())
+            inc_merged = pd.concat([inc_demo, inc_sb], ignore_index=True)
+            return inc_merged, hs_demo, True
+    # Default: data demo (saat Supabase kosong atau belum configured)
     inc, hs = demo_data(today_wib().isoformat())
     return inc, hs, True
 
@@ -325,6 +344,27 @@ if page == "Pengelolaan Data":
     t1, t2, t3 = st.tabs(["Sumber Data", "Log Akses", "Akun"])
 
     with t1:
+        # Status Supabase + toggle demo
+        import laporan_store
+        if laporan_store.is_configured():
+            sb_count = len(laporan_store.fetch_all())
+            st.success(f"🗂️ Supabase **terhubung** — {sb_count} laporan tersimpan permanen. "
+                       "Dashboard menampilkan data real dari Supabase (demo disembunyikan).")
+            show_demo = st.checkbox("Tampilkan juga data demo (sintetis) sebagai pelengkap",
+                                    value=st.session_state.get("show_demo", False),
+                                    help="Hanya untuk demo/presentasi atau saat data real belum lengkap.",
+                                    key="show_demo_toggle")
+            if show_demo != st.session_state.get("show_demo", False):
+                st.session_state["show_demo"] = show_demo
+                st.rerun()
+            if st.button("🔄 Refresh data Supabase", key="sb_refresh"):
+                laporan_store.clear_cache()
+                st.rerun()
+            st.divider()
+        else:
+            st.warning(f"⚠️ Supabase belum terhubung — {laporan_store.status_text()}. "
+                       "Dashboard masih memakai data demo. Set `[supabase]` di Streamlit Secrets "
+                       "untuk mengaktifkan penyimpanan permanen antar user.")
         st.markdown("Pilih sumber data yang ditampilkan di dashboard. Data upload hanya tersimpan selama sesi "
                     "browser Admin dan tidak ditulis ke GitHub.")
         mode = st.radio("Sumber data", ["Data demo (sintetis)", "Data upload (Pusat)"], horizontal=True,

@@ -12,8 +12,11 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt, RGBColor
 
+import re
+
 from data_generator import PROVINSI, WIB
 from data_utils import BULAN_PANJANG, fmt_num
+import laporan_store
 
 NAVY = RGBColor(0x0F, 0x2A, 0x5C)
 
@@ -282,6 +285,18 @@ def _state():
     return st.session_state["manual_reports"]
 
 
+def _subdit_from_user(user):
+    """Deteksi subdit dari username. 'petugas-231' → 'Subdit 231'."""
+    uname = (user.get("username") or "").lower()
+    m = re.match(r"petugas-?(\d{3})", uname)
+    if m:
+        return f"Subdit {m.group(1)}"
+    if "subdit" in user:  # kalau nanti di-set manual
+        return user["subdit"]
+    role = (user.get("role") or "").title()
+    return role or "-"
+
+
 def _tipe_ke_df_row(ek, petugas):
     """Konversi hasil ekstraksi menjadi 1 baris data kejadian (per jenis & provinsi)."""
     rows = []
@@ -318,6 +333,17 @@ def _tipe_ke_df_row(ek, petugas):
 
 
 def render_tab_buat_laporan(user, admin, base_df=None):
+    subdit = _subdit_from_user(user)
+    pakai_sb = laporan_store.is_configured()
+
+    if pakai_sb:
+        st.success(f"🗂️ Mode **TERSIMPAN PERMANEN** · subdit: **{subdit}** · "
+                   "laporan ini akan terlihat oleh seluruh user lintas laptop.")
+    else:
+        st.warning(f"⚠️ Mode **SESI LOKAL** · subdit: **{subdit}** · "
+                   f"Supabase belum terhubung ({laporan_store.status_text()}). Laporan hanya "
+                   "tersimpan di browser kamu dan akan hilang saat reboot.")
+
     st.markdown("Tulis atau tempel laporan dari petugas wilayah. Dashboard akan **mengekstrak** "
                 "tanggal, lokasi, jenis bencana, dan angka dampak secara otomatis.")
 
@@ -331,10 +357,13 @@ def render_tab_buat_laporan(user, admin, base_df=None):
                                          "dipadamkan dan 10 ha belum padam. 45 warga mengungsi, 18 kasus ISPA "
                                          "tercatat. Terpantau 12 titik api di sekitar lokasi."),
                             height=180)
-        tambahkan_ke_data = st.checkbox("Tambahkan juga ke data dashboard (sesi)",
-                                        value=False,
-                                        help="Baris baru akan muncul di tabel/peta/rekap. "
-                                             "Hanya aktif selama sesi berjalan.")
+        if not pakai_sb:
+            tambahkan_ke_data = st.checkbox("Tambahkan juga ke data dashboard (sesi)",
+                                            value=False,
+                                            help="Baris baru akan muncul di tabel/peta/rekap. "
+                                                 "Hanya aktif selama sesi berjalan.")
+        else:
+            tambahkan_ke_data = True  # Supabase mode: selalu publish ke dashboard
         c1, c2, _spacer = st.columns([1, 1, 3])
         pratinjau = c1.form_submit_button("🔍 Pratinjau Ekstraksi", use_container_width=True)
         simpan = c2.form_submit_button("💾 Simpan Laporan", type="primary", use_container_width=True)
@@ -347,29 +376,44 @@ def render_tab_buat_laporan(user, admin, base_df=None):
         _tampil_ekstraksi(ek)
 
         if simpan:
-            rec = {
-                "id": f"LP-{int(datetime.now(WIB).timestamp())}",
-                "judul": judul.strip() or "(tanpa judul)",
-                "sumber": sumber.strip() or "-",
+            rec_meta = {
+                "judul":   judul.strip() or "(tanpa judul)",
+                "sumber":  sumber.strip() or "-",
                 "petugas": f"{user['name']} ({user['role']})",
-                "dibuat": datetime.now(WIB).strftime("%Y-%m-%d %H:%M WIB"),
-                "ekstraksi": ek,
+                "subdit":  subdit,
             }
-            _state().insert(0, rec)
-            st.success(f"Laporan **{rec['judul']}** tersimpan ke sesi.")
-            if tambahkan_ke_data:
-                rows = _tipe_ke_df_row(ek, user["name"])
-                extra = pd.DataFrame(rows)
-                # Base: pakai up_inc existing; kalau belum ada, pakai base_df dari halaman
-                # (biasanya data demo yang sedang aktif) agar data lama tidak hilang.
-                base = st.session_state.get("up_inc")
-                if base is None and base_df is not None and not base_df.empty:
-                    base = base_df.copy()
-                merged = pd.concat([base, extra], ignore_index=True) if base is not None else extra
-                st.session_state["up_inc"] = merged
-                st.session_state["src"] = "upload"
-                st.info(f"{len(rows)} baris kejadian ditambahkan ke dataset dashboard "
-                        f"(total sekarang: {len(merged)} baris).")
+            if pakai_sb:
+                ok, info = laporan_store.insert(ek, rec_meta)
+                if ok:
+                    laporan_store.clear_cache()
+                    st.success(f"Laporan **{rec_meta['judul']}** TERSIMPAN di Supabase "
+                               f"(id {info}). Semua user akan melihatnya setelah refresh.")
+                else:
+                    st.error(f"Gagal simpan ke Supabase: {info}. Laporan disimpan ke sesi "
+                             "lokal sebagai cadangan.")
+                    rec_meta["dibuat"] = datetime.now(WIB).strftime("%Y-%m-%d %H:%M WIB")
+                    rec_meta["id"] = f"LP-{int(datetime.now(WIB).timestamp())}"
+                    _state().insert(0, {**rec_meta, "ekstraksi": ek})
+            else:
+                rec = {
+                    "id":     f"LP-{int(datetime.now(WIB).timestamp())}",
+                    "dibuat": datetime.now(WIB).strftime("%Y-%m-%d %H:%M WIB"),
+                    "ekstraksi": ek,
+                    **rec_meta,
+                }
+                _state().insert(0, rec)
+                st.success(f"Laporan **{rec['judul']}** tersimpan ke sesi (SEMENTARA).")
+                if tambahkan_ke_data:
+                    rows = _tipe_ke_df_row(ek, user["name"])
+                    extra = pd.DataFrame(rows)
+                    base = st.session_state.get("up_inc")
+                    if base is None and base_df is not None and not base_df.empty:
+                        base = base_df.copy()
+                    merged = pd.concat([base, extra], ignore_index=True) if base is not None else extra
+                    st.session_state["up_inc"] = merged
+                    st.session_state["src"] = "upload"
+                    st.info(f"{len(rows)} baris kejadian ditambahkan ke dataset dashboard "
+                            f"(total sekarang: {len(merged)} baris).")
 
     # Indikator mode dataset + tombol reset
     if st.session_state.get("src") == "upload" and st.session_state.get("up_inc") is not None:
@@ -387,9 +431,52 @@ def render_tab_buat_laporan(user, admin, base_df=None):
             st.success("Dataset dikembalikan ke data demo.")
             st.rerun()
 
-    # Daftar laporan tersimpan di sesi
-    daftar = _state()
     st.divider()
+    # Daftar laporan: Supabase (lintas user) atau session (fallback)
+    if pakai_sb:
+        df_sb = laporan_store.fetch_all()
+        st.markdown(f"**Laporan tersimpan (Supabase · lintas user): {len(df_sb)}**")
+        if df_sb.empty:
+            st.caption("Belum ada laporan di Supabase. Simpan laporan untuk mengisi tabel ini.")
+            return
+        for i, (_, r) in enumerate(df_sb.iterrows()):
+            tgl_s = (r["tanggal_kejadian"].strftime("%d %B %Y")
+                     if pd.notna(r.get("tanggal_kejadian")) else "-")
+            created = (pd.to_datetime(r["created_at"]).strftime("%Y-%m-%d %H:%M")
+                       if r.get("created_at") else "-")
+            label = f"{r.get('judul') or '(tanpa judul)'}  ·  {created}  ·  {r.get('subdit', '-')}"
+            with st.expander(label, expanded=(i == 0)):
+                cA, cB = st.columns(2)
+                cA.markdown(f"**Petugas:** {r.get('petugas', '-')}  \n"
+                            f"**Sumber:** {r.get('sumber') or '-'}  \n"
+                            f"**Subdit:** {r.get('subdit') or '-'}")
+                cB.markdown(f"**Tanggal kejadian:** {tgl_s}  \n"
+                            f"**Jenis bencana:** {r.get('jenis_bencana') or '-'}  \n"
+                            f"**Provinsi:** {r.get('provinsi') or '-'}")
+                # Angka dampak
+                angka_cols = ["luas_ha", "luas_padam_ha", "luas_belum_padam_ha", "korban_jiwa",
+                              "pengungsi", "ispa", "rumah_terdampak", "tinggi_genangan_cm",
+                              "magnitudo", "kedalaman_km", "hotspot"]
+                a_shown = {c: r[c] for c in angka_cols if c in r and pd.notna(r[c])}
+                if a_shown:
+                    st.dataframe(pd.DataFrame([a_shown]).T.rename(columns={0: "Nilai"}),
+                                 use_container_width=True)
+                if r.get("teks_asli"):
+                    st.caption("Teks laporan:")
+                    st.write(r["teks_asli"])
+                if admin:
+                    if st.button(f"🗑️ Hapus laporan #{r['id']}", key=f"del_sb_{r['id']}"):
+                        ok, err = laporan_store.delete(r["id"])
+                        if ok:
+                            laporan_store.clear_cache()
+                            st.success("Laporan dihapus.")
+                            st.rerun()
+                        else:
+                            st.error(f"Gagal hapus: {err}")
+        return
+
+    # ---- Mode fallback: session_state ----
+    daftar = _state()
     st.markdown(f"**Laporan tersimpan dalam sesi: {len(daftar)}**")
     if not daftar:
         st.caption("Belum ada laporan. Simpan laporan untuk mengisi daftar ini.")
