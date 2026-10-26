@@ -73,7 +73,11 @@ def delta_pct(cur, prev):
 
 # ------------------------------------------------------------------ wilayah
 def wilayah_options(provinsi_tersedia):
-    return ["Sumatera & Kalimantan", "Sumatera", "Kalimantan"] + sorted(provinsi_tersedia)
+    """Opsi wilayah: dua wilayah besar + 15 provinsi dalam urutan GEOGRAFIS
+    (Sumatera utara→selatan: Aceh→Lampung→Babel→Kepri, lalu Kalimantan barat→utara)."""
+    urut = {p: i for i, p in enumerate(PROVINSI.keys())}
+    prov_terurut = sorted(provinsi_tersedia, key=lambda p: urut.get(p, 999))
+    return ["Sumatera & Kalimantan", "Sumatera", "Kalimantan"] + prov_terurut
 
 
 def wilayah_provinsi(wilayah):
