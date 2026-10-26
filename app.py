@@ -445,15 +445,18 @@ dashboard serta mengunduh laporan ringkas.""")
     st.stop()
 
 # ====================================================================== filter bar
-# - Sebaran Hotspot: dipakem ke Karhutla (hotspot = indikator karhutla).
+# - Opsi filter SELALU lengkap (semua jenis + 15 provinsi) walau dataset kosong, agar
+#   pimpinan bisa switch filter walau data real belum ada.
+# - Sebaran Hotspot: dipakem ke Karhutla.
 # - Laporan: dropdown Jenis Bencana disembunyikan (jenis dipilih via tombol unduh).
+from data_generator import PROVINSI as _ALL_PROVINSI, TIPE_BENCANA as _ALL_TIPE  # noqa: E402
+
 with st.container(border=True):
     if page == "Laporan":
-        # Hanya Periode + Wilayah (jenis dipilih lewat tombol unduh di halaman Laporan)
         f1, f2 = st.columns(2)
-        tipe = "Semua"  # basis data: semua jenis
+        tipe = "Semua"
         periode = f1.selectbox("Periode", list(PERIODE), key="f_periode")
-        wilayah = f2.selectbox("Wilayah", wilayah_options(sorted(inc_all["provinsi"].dropna().unique())),
+        wilayah = f2.selectbox("Wilayah", wilayah_options(list(_ALL_PROVINSI.keys())),
                                key="f_wilayah")
     else:
         f1, f2, f3 = st.columns(3)
@@ -462,9 +465,9 @@ with st.container(border=True):
                          disabled=True, help="Dipakem ke Karhutla karena hotspot adalah indikator karhutla.")
             tipe = "Karhutla"
         else:
-            tipe = f1.selectbox("Jenis Bencana", ["Semua"] + tipe_tersedia(inc_all), key="f_tipe")
+            tipe = f1.selectbox("Jenis Bencana", ["Semua"] + list(_ALL_TIPE), key="f_tipe")
         periode = f2.selectbox("Periode", list(PERIODE), key="f_periode")
-        wilayah = f3.selectbox("Wilayah", wilayah_options(sorted(inc_all["provinsi"].dropna().unique())),
+        wilayah = f3.selectbox("Wilayah", wilayah_options(list(_ALL_PROVINSI.keys())),
                                key="f_wilayah")
 
 days = PERIODE[periode]
