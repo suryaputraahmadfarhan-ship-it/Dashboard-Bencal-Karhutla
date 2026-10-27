@@ -763,15 +763,23 @@ if page == "Beranda":
     st.write("")
 
     # Baris 1 — Peta Kejadian Bencana (semua jenis sesuai filter), full-width
-    # ----- Row 1: Peta Kejadian Bencana (FULL WIDTH) -----
+    # ----- Row 1: Peta Kejadian Bencana (FULL WIDTH, selalu muncul) -----
     with st.container(border=True):
         theme.panel_title("📍 Peta Kejadian Bencana", f"({periode.lower()} · {tipe})")
         md = cur.dropna(subset=["lat", "lon"]) if {"lat", "lon"} <= set(cur.columns) else cur.iloc[0:0]
+        st.markdown(f'<div class="psub">{wil_label} · {fmt_num(len(md))} titik kejadian</div>',
+                    unsafe_allow_html=True)
+        center, zoom = peta_view(wilayah)
         if md.empty:
-            st.caption("Tidak ada data dengan koordinat pada filter ini.")
+            # Base map tanpa marker — tetap tampil orientasi Sumatera-Kalimantan
+            fig_m = map_scatter(pd.DataFrame({"lat": [center["lat"]], "lon": [center["lon"]],
+                                               "placeholder": [""]}),
+                                 center, zoom, 520)
+            fig_m.update_traces(marker=dict(opacity=0, size=1), hoverinfo="skip")
+            fig_m.update_layout(legend=dict(orientation="h", y=1.02, x=0, title_text=""))
+            show(fig_m)
+            st.caption("Belum ada titik kejadian pada filter ini. Peta menampilkan orientasi wilayah.")
         else:
-            st.markdown(f'<div class="psub">{wil_label} · {fmt_num(len(md))} titik kejadian</div>',
-                        unsafe_allow_html=True)
             luas_sanitized = pd.to_numeric(md.get("luas_ha"), errors="coerce").fillna(1.0)
             luas_sanitized = luas_sanitized.replace([np.inf, -np.inf], 1.0).clip(lower=1.0).astype(float)
             md2 = md.assign(luas_plot=luas_sanitized.values,
@@ -784,7 +792,6 @@ if page == "Beranda":
                 hover["korban_jiwa"] = True
             if pakai_ispa() and "ispa" in md2.columns:
                 hover["ispa"] = True
-            center, zoom = peta_view(wilayah)
             fig_m = map_scatter(md2, center, zoom, 520, color="tipe_bencana",
                                 color_discrete_map=TIPE_COLOR, size="luas_plot", size_max=22,
                                 hover_name="kabupaten", opacity=0.78, hover_data=hover)
@@ -1059,7 +1066,18 @@ elif page == "Sebaran Hotspot":
     st.caption("🔥 Hotspot (titik api) merupakan indikator **karhutla**; halaman ini "
                "fokus pada karhutla terlepas dari pilihan filter jenis bencana.")
     if hs_f is None or hs_f.empty:
-        st.warning("Data hotspot belum tersedia pada filter ini.")
+        # Tetap tampilkan peta kosong (base map) + info kalau belum ada data
+        st.info("ℹ️ Belum ada titik hotspot pada filter ini. Petugas Direktorat 2.3 dapat "
+                "input hotspot manual (fitur input hotspot akan ditambahkan segera).")
+        with st.container(border=True):
+            theme.panel_title("Sebaran Titik Hotspot", "(belum ada data)")
+            center, zoom = peta_view(wilayah)
+            fig_empty = map_scatter(pd.DataFrame({"lat": [center["lat"]], "lon": [center["lon"]],
+                                                    "placeholder": [""]}),
+                                     center, zoom, 520)
+            fig_empty.update_traces(marker=dict(opacity=0, size=1), hoverinfo="skip")
+            show(fig_empty)
+            legend_hotspot()
     else:
         # Pilih tanggal hotspot (default: terbaru)
         tgls = sorted(hs_f["tanggal"].dt.normalize().unique(), reverse=True)
