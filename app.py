@@ -806,10 +806,10 @@ if page == "Beranda":
     st.write("")
 
     # ----- Row 2: 5 Provinsi Teratas | Tren Kejadian | Jenis Bencana -----
-    col_prov, col_tren, col_jenis = st.columns([1, 1.1, 1.1])
+    col_prov, col_tren, col_jenis = st.columns([1, 1, 1])
 
     with col_prov, st.container(border=True):
-        theme.panel_title("🏷️ 5 Provinsi Teratas", "(kejadian terbanyak)")
+        theme.panel_title("🏷️ 5 Provinsi Teratas")
         if cur.empty:
             st.caption("Tidak ada data pada filter ini.")
         else:
@@ -831,7 +831,7 @@ if page == "Beranda":
             gran = "mingguan"
         else:
             gran = "harian"
-        theme.panel_title("📊 Tren Kejadian", f"(tren {gran})")
+        theme.panel_title("📊 Tren Kejadian", f"({gran})")
         if cur.empty:
             st.caption("Tidak ada data pada filter ini.")
         else:

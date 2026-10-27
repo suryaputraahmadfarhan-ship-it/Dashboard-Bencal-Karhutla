@@ -150,8 +150,13 @@ div[data-testid="stVerticalBlockBorderWrapper"]{
   background:#fff; border:1px solid var(--line) !important; border-radius:16px !important;
   box-shadow: 0 4px 18px rgba(18,48,122,.06);
 }
-.ptitle{ font-weight:700; font-size:18px; color:var(--ink); margin-bottom:2px; }
-.ptitle span{ font-weight:500; color:var(--muted); font-size:15px; }
+/* Panel di dalam baris 3-kolom sama tinggi minimum (konsisten saat empty-state) */
+div[data-testid="stHorizontalBlock"] > div > div[data-testid="stVerticalBlockBorderWrapper"]{
+  min-height: 320px;
+}
+.ptitle{ font-weight:700; font-size:17px; color:var(--ink); margin-bottom:2px; line-height:1.3;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ptitle span{ font-weight:500; color:var(--muted); font-size:14px; }
 .psub{ color:var(--muted); font-size:13px; margin-bottom:8px; }
 
 /* ------------------------------------------------ KPI */
