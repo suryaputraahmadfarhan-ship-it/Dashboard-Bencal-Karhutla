@@ -182,3 +182,54 @@ def clear_cache():
         fetch_all.clear()
     except Exception:
         pass
+
+
+def to_hotspot_df(df_sb):
+    """Bangun DataFrame hotspot dari laporan karhutla yang menyebut jumlah hotspot.
+    Setiap laporan dengan field `hotspot > 0` di-expand jadi N titik dengan jitter
+    kecil di sekitar koordinat provinsi/kabupaten. Dashboard Sebaran Hotspot baca
+    DataFrame ini seperti data hotspot biasa — tidak perlu input manual terpisah."""
+    if df_sb is None or df_sb.empty:
+        return pd.DataFrame()
+    mask = (df_sb["jenis_bencana"] == "Karhutla") & df_sb["hotspot"].notna() & (df_sb["hotspot"] > 0)
+    df = df_sb[mask].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    try:
+        from data_generator import PROVINSI
+    except Exception:  # noqa: BLE001
+        PROVINSI = {}
+
+    import numpy as np
+    rng = np.random.default_rng(42)
+
+    rows = []
+    for _, lap in df.iterrows():
+        n = int(lap["hotspot"] or 0)
+        if n <= 0:
+            continue
+        prov = lap.get("provinsi")
+        info = PROVINSI.get(prov, {"lat": -0.5, "lon": 108.5, "kab": [lap.get("kabupaten") or "-"]})
+        lat_c = float(info["lat"])
+        lon_c = float(info["lon"])
+        tgl = pd.to_datetime(lap.get("tanggal_kejadian"))
+        kab_default = lap.get("kabupaten") or (info["kab"][0] if info.get("kab") else "-")
+        for i in range(n):
+            rows.append({
+                "id_hotspot": f"HL-{int(lap['id'])}-{i}",
+                "tanggal":    tgl,
+                "provinsi":   prov,
+                "kabupaten":  kab_default,
+                "lat":        lat_c + rng.uniform(-0.4, 0.4),
+                "lon":        lon_c + rng.uniform(-0.5, 0.5),
+                "confidence": "Nominal",
+                "satelit":    "-",
+                "frp":        0.0,
+                "sumber":     f"Laporan Teks (id {int(lap['id'])})",
+            })
+    if not rows:
+        return pd.DataFrame()
+    out = pd.DataFrame(rows)
+    out["tanggal"] = pd.to_datetime(out["tanggal"])
+    return out.dropna(subset=["tanggal", "lat", "lon"]).reset_index(drop=True)

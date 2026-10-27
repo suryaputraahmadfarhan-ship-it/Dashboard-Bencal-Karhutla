@@ -285,20 +285,26 @@ def load_data():
         tampilkan_demo = st.session_state.get("show_demo", False)
         df_sb = laporan_store.fetch_all()
         inc_sb = laporan_store.to_inc_df(df_sb) if not df_sb.empty else pd.DataFrame()
+        # Hotspot otomatis di-generate dari field 'hotspot' pada laporan karhutla
+        hs_sb = laporan_store.to_hotspot_df(df_sb) if not df_sb.empty else pd.DataFrame()
         if tampilkan_demo:
-            # Mode CAMPUR: demo + supabase (jika ada)
+            # Mode CAMPUR: demo + supabase
             inc_demo, hs_demo = demo_data(today_wib().isoformat())
-            if not inc_sb.empty:
-                return pd.concat([inc_demo, inc_sb], ignore_index=True), hs_demo, True
-            return inc_demo, hs_demo, True
-        # Mode PRODUCTION: hanya Supabase (walau kosong) — hotspot juga kosong
+            inc_merge = pd.concat([inc_demo, inc_sb], ignore_index=True) if not inc_sb.empty else inc_demo
+            hs_merge = pd.concat([hs_demo, hs_sb], ignore_index=True) if not hs_sb.empty else hs_demo
+            return inc_merge, hs_merge, True
+        # Mode PRODUCTION: hanya Supabase (walau kosong)
         kolom_min = ["tanggal", "provinsi", "kabupaten", "tipe_bencana", "luas_ha",
                      "luas_padam_ha", "korban_jiwa", "pengungsi", "ispa", "rumah_terdampak",
                      "lat", "lon"]
         if inc_sb.empty:
             inc_sb = pd.DataFrame(columns=kolom_min)
             inc_sb["tanggal"] = pd.to_datetime(inc_sb["tanggal"])
-        return inc_sb, pd.DataFrame(columns=["tanggal", "provinsi", "lat", "lon"]), False
+        if hs_sb.empty:
+            hs_sb = pd.DataFrame(columns=["tanggal", "provinsi", "kabupaten",
+                                           "lat", "lon", "confidence"])
+            hs_sb["tanggal"] = pd.to_datetime(hs_sb["tanggal"])
+        return inc_sb, hs_sb, False
     # Supabase BELUM configured → fallback data demo
     inc, hs = demo_data(today_wib().isoformat())
     return inc, hs, True
