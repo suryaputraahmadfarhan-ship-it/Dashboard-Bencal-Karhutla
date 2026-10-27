@@ -1,0 +1,15 @@
+[theme]
+primaryColor = "#1d4ed8"
+backgroundColor = "#f6f9fe"
+secondaryBackgroundColor = "#eaf1fc"
+textColor = "#0f2a5c"
+font = "sans serif"
+
+[client]
+toolbarMode = "viewer"
+
+[server]
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
